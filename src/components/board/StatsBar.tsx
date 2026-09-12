@@ -2,7 +2,8 @@ import { AlertTriangle, Clock, TrendingDown, TrendingUp, Wallet } from 'lucide-r
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '#/lib/board'
+import { formatCents } from '#/lib/board'
+import type { MoneyFormat } from '#/lib/board'
 
 export interface BoardStats {
   upcomingExpenses: number
@@ -53,9 +54,11 @@ function Stat({
 export default function StatsBar({
   stats,
   horizonDays,
+  money,
 }: {
   stats: BoardStats | undefined
   horizonDays: number
+  money?: MoneyFormat
 }) {
   if (!stats) {
     return (
@@ -72,20 +75,20 @@ export default function StatsBar({
       <Stat
         icon={<TrendingUp size={20} />}
         label="Expected income"
-        value={formatCurrency(stats.expectedIncome)}
+        value={formatCents(stats.expectedIncome, money)}
         sub={`next ${horizonDays} days`}
         tone="good"
       />
       <Stat
         icon={<TrendingDown size={20} />}
         label="Upcoming expenses"
-        value={formatCurrency(stats.upcomingExpenses)}
+        value={formatCents(stats.upcomingExpenses, money)}
         sub={`next ${horizonDays} days`}
       />
       <Stat
         icon={<Wallet size={20} />}
-        label="Net balance"
-        value={formatCurrency(stats.net)}
+        label="Left over"
+        value={formatCents(stats.net, money)}
         sub="income − expenses"
         tone={stats.net >= 0 ? 'good' : 'bad'}
       />
@@ -93,14 +96,14 @@ export default function StatsBar({
         icon={<AlertTriangle size={20} />}
         label="Overdue"
         value={String(stats.overdueCount)}
-        sub={formatCurrency(stats.overdueAmount)}
+        sub={formatCents(stats.overdueAmount, money)}
         tone={stats.overdueCount > 0 ? 'bad' : 'neutral'}
       />
       <Stat
         icon={<Clock size={20} />}
         label="Due this week"
         value={String(stats.dueSoonCount)}
-        sub={formatCurrency(stats.dueSoonAmount)}
+        sub={formatCents(stats.dueSoonAmount, money)}
         tone={stats.dueSoonCount > 0 ? 'warn' : 'neutral'}
       />
     </div>

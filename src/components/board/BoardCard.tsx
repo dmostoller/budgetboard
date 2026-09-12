@@ -1,10 +1,10 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CopyPlus, GripVertical, Repeat, Trash2 } from 'lucide-react'
+import { CopyPlus, FileText, GripVertical, Repeat, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { describeRecurrence, formatCurrency, relativeDue, urgency } from '#/lib/board'
-import type { Card } from '#/lib/board'
+import { cardCents, describeRecurrence, formatCents, relativeDue, urgency } from '#/lib/board'
+import type { Card, MoneyFormat } from '#/lib/board'
 
 const PRIORITY_DOT: Record<Card['priority'], string> = {
   low: 'bg-muted-foreground',
@@ -15,16 +15,18 @@ const PRIORITY_DOT: Record<Card['priority'], string> = {
 export function CardFace({
   card,
   dragging = false,
+  money,
   onOpen,
   onDelete,
-  onRepeat,
+  onDuplicate,
   dragHandleProps,
 }: {
   card: Card
   dragging?: boolean
+  money?: MoneyFormat
   onOpen?: () => void
   onDelete?: () => void
-  onRepeat?: () => void
+  onDuplicate?: () => void
   dragHandleProps?: Record<string, unknown>
 }) {
   const state = urgency(card)
@@ -49,7 +51,7 @@ export function CardFace({
         <button
           type="button"
           aria-label="Drag card"
-          className="mt-0.5 cursor-grab text-muted-foreground opacity-0 transition group-hover:opacity-100 active:cursor-grabbing"
+          className="mt-0.5 cursor-grab text-muted-foreground opacity-0 transition group-hover:opacity-100"
           {...dragHandleProps}
         >
           <GripVertical size={16} />
@@ -69,7 +71,7 @@ export function CardFace({
               )}
             >
               {card.type === 'income' ? '+' : ''}
-              {formatCurrency(card.amount)}
+              {formatCents(cardCents(card), money)}
             </span>
           </div>
 
@@ -98,6 +100,13 @@ export function CardFace({
               </Badge>
             ) : null}
 
+            {card.notes ? (
+              <Badge variant="outline" title={card.notes}>
+                <FileText size={11} />
+                note
+              </Badge>
+            ) : null}
+
             <span
               title={`${card.priority} priority`}
               className={cn('ml-auto h-2 w-2 rounded-full', PRIORITY_DOT[card.priority])}
@@ -106,16 +115,16 @@ export function CardFace({
         </button>
 
         <div className="mt-0.5 flex flex-col gap-1">
-          {onRepeat && card.recurring ? (
+          {onDuplicate ? (
             <button
               type="button"
-              aria-label={`Repeat ${card.description}`}
+              aria-label={`Duplicate ${card.description}`}
               title={
-                card.recurrence
+                card.recurring && card.recurrence
                   ? `Copy forward · ${describeRecurrence(card.recurrence)}`
-                  : 'Copy to next month'
+                  : 'Copy forward a month'
               }
-              onClick={onRepeat}
+              onClick={onDuplicate}
               className="text-muted-foreground opacity-0 transition hover:text-primary group-hover:opacity-100"
             >
               <CopyPlus size={15} />
@@ -139,14 +148,16 @@ export function CardFace({
 
 export default function BoardCard({
   card,
+  money,
   onOpen,
   onDelete,
-  onRepeat,
+  onDuplicate,
 }: {
   card: Card
+  money?: MoneyFormat
   onOpen: () => void
   onDelete: () => void
-  onRepeat: () => void
+  onDuplicate: () => void
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card._id,
@@ -164,9 +175,10 @@ export default function BoardCard({
     >
       <CardFace
         card={card}
+        money={money}
         onOpen={onOpen}
         onDelete={onDelete}
-        onRepeat={onRepeat}
+        onDuplicate={onDuplicate}
         dragHandleProps={{ ...attributes, ...listeners }}
       />
     </div>

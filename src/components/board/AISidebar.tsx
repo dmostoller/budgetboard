@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Bot, Send, Sparkles } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Bot, RotateCcw, Send, Sparkles } from 'lucide-react'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Button } from '@/components/ui/button'
 import { Message, MessageContent } from '@/components/ui/message'
@@ -13,9 +13,12 @@ import {
 } from '@/components/ui/message-scroller'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Textarea } from '@/components/ui/textarea'
+import ToolApproval from './ToolApproval'
 import { MarkdownContent } from '#/lib/markdown'
 import { useBoardChat } from '#/lib/ai-chat'
+import type { PendingApproval } from './ToolApproval'
 import type { ChatMessages } from '#/lib/ai-chat'
+import type { MoneyFormat } from '#/lib/board'
 
 const SUGGESTIONS = [
   'Rent $1200 due on the 15th',
@@ -33,8 +36,16 @@ function ToolLine({ name, summary }: { name: string; summary?: string }) {
   )
 }
 
-function Messages({ messages }: { messages: ChatMessages }) {
-  if (!messages.length) {
+function Messages({
+  messages,
+  approvals,
+  money,
+}: {
+  messages: ChatMessages
+  approvals: Array<PendingApproval>
+  money?: MoneyFormat
+}) {
+  if (!messages.length && approvals.length === 0) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
         <Bot size={28} className="text-primary" />
@@ -77,6 +88,13 @@ function Messages({ messages }: { messages: ChatMessages }) {
                 </Message>
               </MessageScrollerItem>
             ))}
+            {approvals.length > 0 ? (
+              <div className="flex flex-col gap-2 px-1 pb-2">
+                {approvals.map((approval) => (
+                  <ToolApproval key={approval.id} approval={approval} money={money} />
+                ))}
+              </div>
+            ) : null}
           </MessageScrollerContent>
         </MessageScrollerViewport>
         <MessageScrollerButton />
@@ -85,15 +103,47 @@ function Messages({ messages }: { messages: ChatMessages }) {
   )
 }
 
-export default function AISidebar({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { messages, sendMessage, status, error } = useBoardChat()
+export default function AISidebar({
+  open,
+  onClose,
+  money,
+}: {
+  open: boolean
+  onClose: () => void
+  money?: MoneyFormat
+}) {
+  const { messages, sendMessage, status, error, interrupts, resuming, clear } = useBoardChat()
   const [input, setInput] = useState('')
 
   const busy = status === 'streaming' || status === 'submitted'
 
+  /**
+   * Tool calls the server paused for confirmation. Only approval interrupts
+   * are actionable here; anything else (an interrupt owned by another system)
+   * is left alone rather than answered on its behalf.
+   */
+  const approvals = useMemo<Array<PendingApproval>>(
+    () =>
+      interrupts.flatMap((interrupt) => {
+        if (interrupt.kind !== 'tool-approval' || !interrupt.canResolve) return []
+        return [
+          {
+            id: interrupt.id,
+            toolName: interrupt.toolName,
+            args: (interrupt.originalArgs ?? {}) as Record<string, unknown>,
+            busy: resuming || interrupt.status === 'submitting',
+            approve: () => interrupt.resolveInterrupt(true),
+            reject: () => interrupt.resolveInterrupt(false),
+          },
+        ]
+      }),
+    [interrupts, resuming],
+  )
+
   const submit = (text: string) => {
     const value = text.trim()
-    if (!value || busy) return
+    // A pending approval owns the turn; sending now would race the resume.
+    if (!value || busy || approvals.length > 0) return
     // The stream is rendered from `messages`; errors surface through `error`.
     void sendMessage(value)
     setInput('')
@@ -101,15 +151,27 @@ export default function AISidebar({ open, onClose }: { open: boolean; onClose: (
 
   return (
     <Sheet open={open} onOpenChange={(next) => !next && onClose()}>
-      <SheetContent className="flex w-full max-w-[420px] gap-0 p-0 sm:max-w-[420px]">
-        <SheetHeader className="flex-row items-center border-b border-border py-3">
+      <SheetContent className="flex w-full max-w-105 gap-0 p-0 sm:max-w-105">
+        <SheetHeader className="flex-row items-center justify-between border-b border-border py-3">
           <SheetTitle className="flex items-center gap-2">
             <Bot size={18} className="text-primary" />
             Budget assistant
           </SheetTitle>
+          {messages.length > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clear}
+              disabled={busy || approvals.length > 0}
+              title="Start a new conversation"
+            >
+              <RotateCcw size={14} />
+              New chat
+            </Button>
+          ) : null}
         </SheetHeader>
 
-        <Messages messages={messages} />
+        <Messages messages={messages} approvals={approvals} money={money} />
 
         {error ? (
           <p className="mx-4 mb-2 rounded-xl border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
@@ -145,7 +207,13 @@ export default function AISidebar({ open, onClose }: { open: boolean; onClose: (
             <Textarea
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder={busy ? 'Thinking…' : 'Add an expense, ask a question…'}
+              placeholder={
+                approvals.length > 0
+                  ? 'Waiting on your approval above…'
+                  : busy
+                    ? 'Thinking…'
+                    : 'Add an expense, ask a question…'
+              }
               rows={1}
               className="min-h-10 pr-10 text-sm"
               style={{ maxHeight: '140px' }}
@@ -165,7 +233,7 @@ export default function AISidebar({ open, onClose }: { open: boolean; onClose: (
               type="submit"
               variant="ghost"
               size="icon-sm"
-              disabled={!input.trim() || busy}
+              disabled={!input.trim() || busy || approvals.length > 0}
               aria-label="Send"
               className="absolute top-1/2 right-2 -translate-y-1/2"
             >

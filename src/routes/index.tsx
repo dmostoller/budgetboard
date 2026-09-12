@@ -22,7 +22,7 @@ function Home() {
 
   return (
     <main>
-      <Board userId={userId} />
+      <Board />
     </main>
   )
 }

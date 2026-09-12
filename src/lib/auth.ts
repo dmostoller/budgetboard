@@ -1,6 +1,18 @@
 import { betterAuth } from 'better-auth'
 import { tanstackStartCookies } from 'better-auth/tanstack-start'
+import { jwt } from 'better-auth/plugins/jwt'
 import { Pool } from 'pg'
+
+/**
+ * Public origin of this app. It is the JWT issuer, so it has to match the
+ * `domain` in `convex/auth.config.ts` exactly — Convex fetches
+ * `${domain}/.well-known/openid-configuration` to discover the signing keys
+ * and then rejects any token whose `iss` differs.
+ */
+export const authBaseUrl = process.env.BETTER_AUTH_URL ?? 'http://localhost:3000'
+
+/** The `aud` claim Convex is configured to accept. */
+export const CONVEX_AUDIENCE = 'convex'
 
 const googleClientId = process.env.GOOGLE_CLIENT_ID
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET
@@ -49,5 +61,29 @@ export const auth = betterAuth({
           },
         }
       : undefined,
-  plugins: [tanstackStartCookies()],
+  plugins: [
+    /**
+     * Convex does not share this app's session cookie — it verifies a signed
+     * JWT instead. This plugin publishes the signing keys at
+     * `/api/auth/jwks` and mints a short-lived token at `/api/auth/token`,
+     * which is what lets every Convex function derive the caller's identity
+     * from `ctx.auth` rather than trusting a `userId` sent by the client.
+     *
+     * RS256 rather than the plugin's Ed25519 default: that is what Convex's
+     * token verifier accepts.
+     */
+    jwt({
+      jwks: { keyPairConfig: { alg: 'RS256' } },
+      jwt: {
+        issuer: authBaseUrl,
+        audience: CONVEX_AUDIENCE,
+        expirationTime: '1h',
+        definePayload: ({ user }) => ({
+          email: user.email,
+          name: user.name,
+        }),
+      },
+    }),
+    tanstackStartCookies(),
+  ],
 })

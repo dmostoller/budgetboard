@@ -1,7 +1,7 @@
 import { useStore } from '@tanstack/react-store'
-import { AlertCircle, Check, X } from 'lucide-react'
+import { AlertCircle, Check, Undo2, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { dismissToast, toasts } from '#/lib/toast'
+import { dismissToast, runToastAction, toasts } from '#/lib/toast'
 
 export default function Toaster() {
   const list = useStore(toasts, (state) => state)
@@ -27,6 +27,19 @@ export default function Toaster() {
             <Check size={16} className="mt-0.5 shrink-0" />
           )}
           <p className="flex-1">{toast.message}</p>
+
+          {toast.action ? (
+            <button
+              type="button"
+              onClick={() => void runToastAction(toast.id)}
+              disabled={toast.pending}
+              className="mt-px shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-50"
+            >
+              <Undo2 size={12} />
+              {toast.pending ? 'Undoing…' : toast.action.label}
+            </button>
+          ) : null}
+
           <button
             type="button"
             onClick={() => dismissToast(toast.id)}

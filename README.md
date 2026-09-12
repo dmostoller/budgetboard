@@ -80,10 +80,75 @@ run the migration once:
 pnpm dlx @better-auth/cli migrate
 ```
 
+This also creates the `jwks` table holding the RS256 keypair that signs Convex
+tokens. Sign-in works without it, but `/api/auth/token` returns a 500 and the
+board stays empty, so run it before anything else.
+
 Without `DATABASE_URL` the app falls back to Better Auth's in-memory store and
 warns on boot — fine for a first local run, but accounts vanish on restart. In
 production the server refuses to start without it rather than quietly losing
 accounts.
+
+### Telling Convex which tokens to trust
+
+Convex validates the JWT rather than sharing the session cookie, so it needs
+two things: the issuer to expect, and the public keys to check the signature
+against.
+
+`SITE_URL` is the issuer. It must match `BETTER_AUTH_URL` exactly — it is the
+token's `iss` claim:
+
+```bash
+npx convex env set SITE_URL http://localhost:3000
+```
+
+The keys are the part that differs between local and deployed, because Convex
+fetches them over the public internet and **cannot reach `localhost`**. A cloud
+deployment resolving `localhost` gets its own container, so key discovery
+quietly yields nothing and every request looks anonymous — reads come back
+empty and writes fail with `Not signed in`.
+
+Locally, hand Convex the key set directly instead. With the app running:
+
+```bash
+npx convex env set JWKS "$(./scripts/jwks-data-uri.sh)"
+```
+
+That stores the JWKS as a `data:` URI, which `convex/auth.config.ts` passes to
+Convex's `customJwt` provider. `issuer` and `jwks` are independent there, so
+the token can keep claiming `iss: http://localhost:3000` while the keys come
+from somewhere Convex can actually read. Nothing is fetched at all.
+
+In production, leave `JWKS` unset: the deployed origin _is_ reachable, and the
+config falls back to ordinary OIDC discovery.
+
+The embedded value is a **public** key set, so it is configuration rather than
+a secret. Regenerate it if Better Auth ever rotates its signing key (rotation
+is off by default) — `./dev.sh` compares the two on startup and warns when they
+drift, because the symptom otherwise is an abrupt, total `Not signed in`.
+
+Optionally, so the weekly briefing phrases its findings with the model rather
+than the built-in templates:
+
+```bash
+npx convex env set GEMINI_API_KEY <key>
+```
+
+### One-time data migrations
+
+Existing boards need three idempotent backfills, safe to re-run:
+
+```bash
+npx convex run migrations:toCents
+npx convex run migrations:normalizeRules
+npx convex run migrations:adoptSeriesIds
+```
+
+`toCents` moves float dollars into the integer `amountCents` column (the float
+`amount` is left in place rather than deleted, so a bad conversion can be
+inspected). `normalizeRules` pins every recurrence rule to an explicit day.
+`adoptSeriesIds` gives pre-existing recurring cards a series identity so the
+nightly autoroll can find them.
 
 ## Scripts
 
@@ -185,16 +250,15 @@ server locally.
   persistence rather than TanStack AI's run-store resume. Same practical
   resilience across reloads and dropped connections, without depending on
   server-side run storage.
-- **Convex trusts the `userId` argument.** Every query and mutation is scoped by
-  it, and server-side callers pass the verified session id, but a crafted
-  browser client could pass someone else's. Closing this means letting Convex
-  verify the session itself — either `@convex-dev/better-auth` (currently pinned
-  to `better-auth <1.7`, which this project is past) or the Better Auth JWT
-  plugin with a `convex/auth.config.ts` provider, which needs a publicly
-  reachable JWKS URL. Both need a live Convex deployment to set up.
+- **Convex verifies the session itself.** Functions take no `userId` argument;
+  each one derives the caller from `ctx.auth.getUserIdentity()`. The Better
+  Auth `jwt` plugin mints a short-lived RS256 token, this app serves the OIDC
+  discovery document at `/.well-known/openid-configuration`, and
+  `convex/auth.config.ts` points Convex at it. The AI tools take the same route
+  — the chat route mints the same token and hands it to `ConvexHttpClient`, so
+  there is no server-side path that trusts an id instead of a signature.
 
 ## Not in V1
 
-Recurring auto-generation (the card copies forward on request; nothing
-schedules it), email/push notifications, budget goals, CSV export and shared
-boards — see the end of [PLAN.md](./PLAN.md).
+Email/push notifications, CSV import/export, bank sync and shared boards — see
+the end of [PLAN.md](./PLAN.md).

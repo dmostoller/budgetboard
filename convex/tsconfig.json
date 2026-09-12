@@ -12,8 +12,9 @@
     "skipLibCheck": true,
     "allowSyntheticDefaultImports": true,
     /* convex-test drives these functions from Vitest, which supplies
-     * import.meta.glob. */
-    "types": ["vite/client"],
+     * import.meta.glob. "node" is here only for `process.env`, which the
+     * Convex runtime provides for deployment environment variables. */
+    "types": ["vite/client", "node"],
 
     /* These compiler options are required by Convex */
     "target": "ESNext",

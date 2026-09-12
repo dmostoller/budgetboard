@@ -19,6 +19,12 @@ export const Route = createFileRoute('/api/ai/chat')({
           return Response.json({ error: 'Not signed in' }, { status: 401 })
         }
 
+        // The tools talk to Convex as this user. Minting the same JWT the
+        // browser uses means the server path is scoped by the identical
+        // identity check — there is no privileged back door that trusts a
+        // user id passed in an argument.
+        const { token: convexToken } = await auth.api.getToken({ headers: request.headers })
+
         if (!process.env.GEMINI_API_KEY) {
           return Response.json(
             { error: 'GEMINI_API_KEY is not configured on the server' },
@@ -33,7 +39,7 @@ export const Route = createFileRoute('/api/ai/chat')({
 
           const stream = chat({
             adapter: geminiText(MODEL as any),
-            tools: createBoardTools(session.user.id),
+            tools: createBoardTools(convexToken ?? null),
             systemPrompts: [boardSystemPrompt()],
             agentLoopStrategy: maxIterations(8),
             messages,

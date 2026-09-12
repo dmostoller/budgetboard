@@ -4,33 +4,44 @@ import { Plus } from 'lucide-react'
 import BoardCard from './BoardCard'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { formatCurrency } from '#/lib/board'
-import type { Card, CardStatus } from '#/lib/board'
+import { cardCents, formatCents } from '#/lib/board'
+import type { Card, CardStatus, ColumnForecast, MoneyFormat } from '#/lib/board'
+
+/** "Sep 2027" — the granularity a forecast horizon deserves. */
+function monthYear(ms: number) {
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+}
 
 export default function Column({
   status,
   title,
   cards,
+  money,
   onAdd,
   onOpen,
   onDelete,
-  onRepeat,
+  onDuplicate,
+  forecast,
 }: {
   status: CardStatus
   title: string
   cards: Array<Card>
+  money?: MoneyFormat
   onAdd: () => void
   onOpen: (card: Card) => void
   onDelete: (card: Card) => void
-  onRepeat: (card: Card) => void
+  onDuplicate: (card: Card) => void
+  /** Occurrences this column's series imply but have not materialized yet. */
+  forecast?: ColumnForecast
 }) {
   const { setNodeRef, isOver } = useDroppable({
     id: `column:${status}`,
     data: { status },
   })
 
-  const total = cards.reduce((sum, c) => sum + c.amount, 0)
+  const total = cards.reduce((sum, c) => sum + cardCents(c), 0)
 
   return (
     <section
@@ -47,7 +58,7 @@ export default function Column({
         </div>
         <div className="flex items-center gap-2">
           <span className="text-xs font-semibold tabular-nums text-muted-foreground">
-            {formatCurrency(total)}
+            {formatCents(total, money)}
           </span>
           <Button
             variant="ghost"
@@ -61,23 +72,32 @@ export default function Column({
       </header>
 
       <SortableContext items={cards.map((c) => c._id)} strategy={verticalListSortingStrategy}>
-        <div className="flex flex-1 flex-col gap-2">
-          {cards.map((card) => (
-            <BoardCard
-              key={card._id}
-              card={card}
-              onOpen={() => onOpen(card)}
-              onDelete={() => onDelete(card)}
-              onRepeat={() => onRepeat(card)}
-            />
-          ))}
-          {cards.length === 0 ? (
-            <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-              Drop cards here
-            </p>
-          ) : null}
-        </div>
+        <ScrollArea className="max-h-[32rem]">
+          <div className="flex flex-col gap-2 pr-3">
+            {cards.map((card) => (
+              <BoardCard
+                key={card._id}
+                card={card}
+                money={money}
+                onOpen={() => onOpen(card)}
+                onDelete={() => onDelete(card)}
+                onDuplicate={() => onDuplicate(card)}
+              />
+            ))}
+            {cards.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
+                Drop cards here
+              </p>
+            ) : null}
+          </div>
+        </ScrollArea>
       </SortableContext>
+
+      {forecast && forecast.count > 0 ? (
+        <p className="mt-2 border-t border-border pt-2 text-center text-xs text-muted-foreground">
+          +{forecast.count} more forecast through {monthYear(forecast.through)}
+        </p>
+      ) : null}
     </section>
   )
 }

@@ -102,15 +102,78 @@ sessions and OAuth accounts.
    ```
 
    It prints the schema it is about to create (`user`, `session`, `account`,
-   `verification`) and asks for confirmation.
+   `verification`, `jwks`) and asks for confirmation.
+
+   `jwks` holds the RS256 keypair Better Auth signs Convex tokens with. Skip
+   this table and sign-in appears to work while `/api/auth/token` returns a
+   500, leaving the board permanently empty — so it is not optional.
 
 Verify: in Neon's SQL editor, `select * from "user";` returns zero rows rather
-than an error.
+than an error, and `select * from "jwks";` does the same.
 
 > Without `DATABASE_URL` the app falls back to an in-memory store and warns on
 > boot. That is fine for a first local run, but the server **refuses to start in
 > production** without it, rather than quietly losing every account on each cold
 > start.
+
+---
+
+## 3b. Tell Convex which tokens to trust
+
+Convex does not share this app's session cookie. It verifies a JWT, and it
+discovers the signing keys by fetching
+`${SITE_URL}/.well-known/openid-configuration` — a small document this app
+serves from `src/routes/[.]well-known/openid-configuration.ts`, pointing at
+Better Auth's JWKS.
+
+`SITE_URL` is the token's `iss` claim, so it must match `BETTER_AUTH_URL`
+character for character on every deployment:
+
+```bash
+# dev
+npx convex env set SITE_URL http://localhost:3000
+
+# production
+npx convex env set --prod SITE_URL https://your-app.vercel.app
+```
+
+Optionally, so the weekly briefing phrases its findings with the model instead
+of the built-in templates:
+
+```bash
+npx convex env set GEMINI_API_KEY <key>
+```
+
+Verify: `curl $BETTER_AUTH_URL/.well-known/openid-configuration` returns JSON
+whose `issuer` equals `SITE_URL`, and `curl $BETTER_AUTH_URL/api/auth/jwks`
+returns a key with `"alg": "RS256"`.
+
+A mismatch here is the single most likely cause of a signed-in user seeing an
+empty board: Better Auth issues the token happily, and Convex rejects it
+because the issuer does not match anything it trusts.
+
+### Local development needs the keys inlined
+
+Discovery only works when Convex can reach the app. In production it can. On a
+laptop it cannot — a cloud deployment resolving `http://localhost:3000` gets
+its own container, so it never retrieves the signing keys, treats every request
+as anonymous, and the board sits empty while writes fail with `Not signed in`.
+
+So for the **dev** deployment, give Convex the key set rather than a URL to go
+and get it from. With the app running:
+
+```bash
+npx convex env set JWKS "$(./scripts/jwks-data-uri.sh)"
+```
+
+`convex/auth.config.ts` switches to Convex's `customJwt` provider whenever
+`JWKS` is set, where `issuer` and `jwks` are separate fields — the token still
+claims `iss: http://localhost:3000` while the keys come from the config itself.
+
+Leave `JWKS` **unset on production**, so it keeps using discovery against the
+real domain. The embedded value is a public key set, not a secret, but it does
+go stale if Better Auth rotates its signing key (off by default); `./dev.sh`
+compares Convex's copy against the app's live one at startup and says so.
 
 ---
 

@@ -1,62 +1,64 @@
-import { Area, AreaChart, CartesianGrid, XAxis } from 'recharts'
+import { Area, AreaChart, CartesianGrid, Line, ReferenceLine, XAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import type { ChartConfig } from '@/components/ui/chart'
-import {
-  DAY,
-  formatCurrency,
-  formatDate,
-  isCompleted,
-  occurrencesInRange,
-  toDateInput,
-} from '#/lib/board'
-import type { Card as BoardCard } from '#/lib/board'
+import { cashFlowSeries, formatCents } from '#/lib/board'
+import type { Card as BoardCard, MoneyFormat } from '#/lib/board'
 
 const chartConfig = {
-  balance: { label: 'Projected balance', color: 'var(--primary)' },
+  balance: { label: 'Net position', color: 'var(--primary)' },
+  scenario: { label: 'What if', color: 'var(--chart-2, oklch(0.7 0.15 45))' },
 } satisfies ChartConfig
 
+/**
+ * Running net position across the horizon: income in, expenses out, starting
+ * from zero.
+ *
+ * Zero is the deliberate baseline. The question this chart answers is whether
+ * what comes in covers what goes out over the window — not what an account
+ * balance will read, which would need a starting balance the app does not
+ * ask for.
+ */
 export default function CashFlowChart({
   cards,
   horizonDays,
+  money,
+  scenarioCards,
 }: {
   cards: Array<BoardCard>
   horizonDays: number
+  money?: MoneyFormat
+  /** When present, drawn as a second line for comparison. */
+  scenarioCards?: Array<BoardCard>
 }) {
-  const start = new Date()
-  start.setHours(0, 0, 0, 0)
-  const now = start.getTime()
-  const horizonEnd = now + horizonDays * DAY
+  const base = cashFlowSeries(cards, horizonDays)
+  const scenario = scenarioCards ? cashFlowSeries(scenarioCards, horizonDays) : null
 
-  // A recurring card in an open column projects every future occurrence
-  // within the horizon; a completed card is a single, already-realized
-  // data point.
-  const netByDay = new Map<string, number>()
-  for (const card of cards) {
-    const dates = isCompleted(card.status) ? [card.date] : occurrencesInRange(card, now, horizonEnd)
-    const net = card.type === 'income' ? card.amount : -card.amount
-    for (const date of dates) {
-      const key = toDateInput(date)
-      netByDay.set(key, (netByDay.get(key) ?? 0) + net)
-    }
-  }
+  const data = base.map((point, i) => ({
+    label: point.label,
+    balance: point.balance,
+    ...(scenario ? { scenario: scenario[i]?.balance ?? 0 } : {}),
+  }))
 
-  let balance = 0
-  const data = Array.from({ length: horizonDays + 1 }, (_, i) => {
-    const date = now + i * DAY
-    balance += netByDay.get(toDateInput(date)) ?? 0
-    return { label: formatDate(date), balance }
-  })
+  const trough = base.reduce(
+    (low, p) => (p.balance < low.balance ? p : low),
+    base[0] ?? { balance: 0, label: '' },
+  )
 
   return (
     <Card>
       <CardHeader>
         <CardTitle className="text-sm font-semibold tracking-wide text-muted-foreground uppercase">
-          Cash flow
+          Income vs expenses
         </CardTitle>
+        {trough.balance < 0 ? (
+          <p className="text-xs text-destructive">
+            Lowest point {formatCents(trough.balance, money)} around {trough.label}
+          </p>
+        ) : null}
       </CardHeader>
       <CardContent>
-        <ChartContainer config={chartConfig} className="aspect-auto h-[200px] w-full">
+        <ChartContainer config={chartConfig} className="aspect-auto h-50 w-full 2xl:h-70">
           <AreaChart data={data}>
             <defs>
               <linearGradient id="cash-flow-fill" x1="0" y1="0" x2="0" y2="1">
@@ -72,8 +74,12 @@ export default function CashFlowChart({
               tickMargin={8}
               minTickGap={40}
             />
+            {/* Break-even: above it the window covers itself, below it does not. */}
+            <ReferenceLine y={0} stroke="var(--border)" strokeDasharray="4 4" />
             <ChartTooltip
-              content={<ChartTooltipContent formatter={(value) => formatCurrency(Number(value))} />}
+              content={
+                <ChartTooltipContent formatter={(value) => formatCents(Number(value), money)} />
+              }
             />
             <Area
               dataKey="balance"
@@ -81,6 +87,16 @@ export default function CashFlowChart({
               fill="url(#cash-flow-fill)"
               stroke="var(--color-balance)"
             />
+            {scenario ? (
+              <Line
+                dataKey="scenario"
+                type="monotone"
+                stroke="var(--color-scenario)"
+                strokeDasharray="5 4"
+                strokeWidth={2}
+                dot={false}
+              />
+            ) : null}
           </AreaChart>
         </ChartContainer>
       </CardContent>

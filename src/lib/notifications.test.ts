@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vite-plus/test'
-import { buildAlerts, pruneDismissed } from './notifications'
+import { buildAlerts, staleDismissals } from './notifications'
 import { DAY } from './board'
 import type { Card } from './board'
 
@@ -11,7 +11,7 @@ function card(overrides: Partial<Card> = {}): Card {
     _creationTime: 0,
     userId: 'user_1',
     type: 'expense',
-    amount: 100,
+    amountCents: 10000,
     description: 'Rent',
     date: now + 10 * DAY,
     category: 'Rent/Mortgage',
@@ -85,9 +85,24 @@ describe('buildAlerts', () => {
   })
 })
 
-describe('pruneDismissed', () => {
-  test('forgets dismissals whose alert is gone', () => {
+describe('staleDismissals', () => {
+  test('identifies dismissals whose alert is gone', () => {
     const alerts = buildAlerts([card({ date: now - DAY })], now)
-    expect(pruneDismissed([alerts[0].id, 'stale:id'], alerts)).toEqual([alerts[0].id])
+    expect(staleDismissals([alerts[0].id, 'stale:id'], alerts)).toEqual(['stale:id'])
+  })
+
+  test('keeps a dismissal that still matches a live alert', () => {
+    const alerts = buildAlerts([card({ date: now - DAY })], now)
+    expect(staleDismissals([alerts[0].id], alerts)).toEqual([])
+  })
+})
+
+describe('alert amounts', () => {
+  test('renders the amount in the configured currency', () => {
+    const [alert] = buildAlerts([card({ date: now - DAY, amountCents: 120050 })], now, {
+      currency: 'USD',
+      locale: 'en-US',
+    })
+    expect(alert.detail).toContain('$1,200.50')
   })
 })

@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { AlertTriangle, Bell, CalendarClock, Check, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { buildAlerts, pruneDismissed, readDismissed, writeDismissed } from '#/lib/notifications'
+import { buildAlerts } from '#/lib/notifications'
 import type { Alert, AlertKind } from '#/lib/notifications'
-import type { Card } from '#/lib/board'
+import type { Card, MoneyFormat } from '#/lib/board'
 
 const ICON: Record<AlertKind, React.ReactNode> = {
   overdue: <AlertTriangle size={15} className="text-destructive" />,
@@ -16,36 +16,30 @@ const ICON: Record<AlertKind, React.ReactNode> = {
 
 export default function NotificationsBell({
   cards,
+  money,
+  dismissed,
+  open,
+  onOpenChange,
+  onDismiss,
   onOpenCard,
 }: {
   cards: Array<Card>
+  money?: MoneyFormat
+  /** Dismissed alert ids, stored server-side so they follow the user. */
+  dismissed: Array<string>
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onDismiss: (alertIds: Array<string>) => void
   onOpenCard: (cardId: string) => void
 }) {
-  const [open, setOpen] = useState(false)
-  const [dismissed, setDismissed] = useState<Array<string>>([])
-
-  // Read on mount rather than during render: localStorage does not exist while
-  // the page is being server-rendered.
-  useEffect(() => setDismissed(readDismissed()), [])
-
-  const alerts = useMemo(() => buildAlerts(cards), [cards])
+  const alerts = useMemo(() => buildAlerts(cards, Date.now(), money), [cards, money])
   const visible = alerts.filter((a) => !dismissed.includes(a.id))
 
-  function dismiss(alert: Alert) {
-    const next = pruneDismissed([...dismissed, alert.id], alerts)
-    setDismissed(next)
-    writeDismissed(next)
-  }
-
-  function dismissAll() {
-    const next = visible.map((a) => a.id).concat(dismissed)
-    const pruned = pruneDismissed(next, alerts)
-    setDismissed(pruned)
-    writeDismissed(pruned)
-  }
+  const dismiss = (alert: Alert) => onDismiss([alert.id])
+  const dismissAll = () => onDismiss(visible.map((a) => a.id))
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger
         render={
           <Button
@@ -94,7 +88,7 @@ export default function NotificationsBell({
                   type="button"
                   onClick={() => {
                     onOpenCard(alert.cardId)
-                    setOpen(false)
+                    onOpenChange(false)
                   }}
                   className="min-w-0 flex-1 text-left"
                 >

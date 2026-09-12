@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
+import RecurrenceFields from './RecurrenceFields'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -11,6 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
 import {
   Select,
   SelectContent,
@@ -20,25 +23,34 @@ import {
 } from '@/components/ui/select'
 import {
   LANES,
-  WEEKDAYS,
-  describeRecurrence,
+  cardCents,
+  centsToInput,
   fromDateInput,
+  toCents,
   toDateInput,
   typeForStatus,
 } from '#/lib/board'
 import { fieldErrorMessage } from '#/lib/form'
-import type { Card, CardPriority, CardStatus, CardType, Recurrence } from '#/lib/board'
+import type { Card, CardPriority, CardStatus, CardType } from '#/lib/board'
 
 const recurrenceSchema = z.object({
   frequency: z.enum(['weekly', 'monthly']),
   interval: z.number().int().min(1),
   weekday: z.number().int().min(0).max(6).optional(),
-  dayOfMonth: z.number().int().min(1).max(31).optional(),
+  // -1 is the "last day of the month" sentinel.
+  dayOfMonth: z.number().int().min(-1).max(31).optional(),
+  nthWeekday: z
+    .object({ ordinal: z.number().int(), weekday: z.number().int().min(0).max(6) })
+    .optional(),
+  endsAfter: z.number().int().min(1).optional(),
+  endsOn: z.number().optional(),
 })
 
 const schema = z.object({
   type: z.enum(['income', 'expense']),
-  amount: z.number().positive('Enter an amount greater than zero'),
+  // Held as the typed string so "12.5" round-trips; converted to whole cents
+  // on submit, never stored as a float.
+  amount: z.string().refine((value) => toCents(value) > 0, 'Enter an amount greater than zero'),
   description: z.string().min(1, 'Description is required'),
   date: z.string().min(1, 'Date is required'),
   category: z.string().min(1, 'Pick a category'),
@@ -46,6 +58,7 @@ const schema = z.object({
   recurring: z.boolean(),
   recurrence: recurrenceSchema.nullable(),
   source: z.string(),
+  notes: z.string(),
   status: z.enum(['upcoming', 'due', 'paid', 'expected', 'received']),
 })
 
@@ -71,11 +84,14 @@ export default function CardDialog({
 }) {
   const { card } = draft
   const initialType = card?.type ?? typeForStatus(draft.status)
+  // `window.prompt` blocks the whole page, cannot be styled, and is silently
+  // suppressed in some embedded browsers — a real dialog instead.
+  const [newCategoryFor, setNewCategoryFor] = useState<CardType | null>(null)
 
   const form = useForm({
     defaultValues: {
       type: initialType,
-      amount: card?.amount ?? 0,
+      amount: card ? centsToInput(cardCents(card)) : '',
       description: card?.description ?? '',
       date: toDateInput(card?.date ?? Date.now()),
       category: card?.category ?? categories[initialType][0],
@@ -83,6 +99,7 @@ export default function CardDialog({
       recurring: card?.recurring ?? false,
       recurrence: card?.recurrence ?? null,
       source: card?.source ?? '',
+      notes: card?.notes ?? '',
       status: card?.status ?? draft.status,
     } satisfies CardFormValues,
     validators: { onChange: schema },
@@ -153,11 +170,10 @@ export default function CardDialog({
                 <Label className="flex flex-col items-start gap-1">
                   Amount
                   <Input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={field.state.value || ''}
-                    onChange={(e) => field.handleChange(Number(e.target.value))}
+                    inputMode="decimal"
+                    placeholder="0.00"
+                    value={field.state.value}
+                    onChange={(e) => field.handleChange(e.target.value)}
                     onBlur={field.handleBlur}
                   />
                   <FieldMessage errors={field.state.meta.errors} />
@@ -190,14 +206,10 @@ export default function CardDialog({
                       Category
                       <Select
                         value={field.state.value}
-                        onValueChange={async (value) => {
+                        onValueChange={(value) => {
                           if (value === null) return
                           if (value === '__new__') {
-                            const name = window.prompt('New category name')
-                            if (name?.trim()) {
-                              await onAddCategory(name.trim(), type)
-                              field.handleChange(name.trim())
-                            }
+                            setNewCategoryFor(type)
                             return
                           }
                           field.handleChange(value)
@@ -306,128 +318,37 @@ export default function CardDialog({
 
                 {field.state.value ? (
                   <form.Field name="recurrence">
-                    {(recurrenceField) => {
-                      const value: Recurrence = recurrenceField.state.value ?? {
-                        frequency: 'monthly',
-                        interval: 1,
-                        dayOfMonth: 1,
-                      }
-                      return (
-                        <div className="grid grid-cols-2 gap-3 pl-6">
-                          <Label className="flex flex-col items-start gap-1">
-                            Repeats
-                            <Select
-                              value={value.frequency}
-                              onValueChange={(frequency) => {
-                                if (!frequency) return
-                                const seedDate = new Date(fromDateInput(form.getFieldValue('date')))
-                                recurrenceField.handleChange(
-                                  frequency === 'weekly'
-                                    ? {
-                                        frequency: 'weekly',
-                                        interval: value.interval,
-                                        weekday: seedDate.getDay(),
-                                      }
-                                    : {
-                                        frequency: 'monthly',
-                                        interval: value.interval,
-                                        dayOfMonth: seedDate.getDate(),
-                                      },
-                                )
-                              }}
-                            >
-                              <SelectTrigger className="w-full">
-                                <SelectValue>
-                                  {(frequency: string) =>
-                                    frequency === 'weekly' ? 'Weekly' : 'Monthly'
-                                  }
-                                </SelectValue>
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="weekly">Weekly</SelectItem>
-                                <SelectItem value="monthly">Monthly</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </Label>
-
-                          <Label className="flex flex-col items-start gap-1">
-                            Every
-                            <div className="flex w-full items-center gap-2">
-                              <Input
-                                type="number"
-                                min="1"
-                                max={value.frequency === 'weekly' ? 52 : 24}
-                                value={value.interval}
-                                onChange={(e) =>
-                                  recurrenceField.handleChange({
-                                    ...value,
-                                    interval: Math.max(1, Number(e.target.value) || 1),
-                                  })
-                                }
-                              />
-                              <span className="text-xs whitespace-nowrap text-muted-foreground">
-                                {value.frequency === 'weekly' ? 'week(s)' : 'month(s)'}
-                              </span>
-                            </div>
-                          </Label>
-
-                          {value.frequency === 'weekly' ? (
-                            <Label className="col-span-2 flex flex-col items-start gap-1">
-                              On
-                              <Select
-                                value={String(value.weekday ?? 0)}
-                                onValueChange={(weekday) =>
-                                  weekday &&
-                                  recurrenceField.handleChange({
-                                    ...value,
-                                    weekday: Number(weekday),
-                                  })
-                                }
-                              >
-                                <SelectTrigger className="w-full">
-                                  <SelectValue>
-                                    {(weekday: string) => WEEKDAYS[Number(weekday)]}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {WEEKDAYS.map((label, index) => (
-                                    <SelectItem key={label} value={String(index)}>
-                                      {label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </Label>
-                          ) : (
-                            <Label className="col-span-2 flex flex-col items-start gap-1">
-                              On day
-                              <Input
-                                type="number"
-                                min="1"
-                                max="31"
-                                value={value.dayOfMonth ?? 1}
-                                onChange={(e) =>
-                                  recurrenceField.handleChange({
-                                    ...value,
-                                    dayOfMonth: Math.min(
-                                      31,
-                                      Math.max(1, Number(e.target.value) || 1),
-                                    ),
-                                  })
-                                }
-                              />
-                            </Label>
-                          )}
-
-                          <p className="col-span-2 text-xs text-muted-foreground">
-                            {describeRecurrence(value)}
-                          </p>
-                        </div>
-                      )
-                    }}
+                    {(recurrenceField) => (
+                      <RecurrenceFields
+                        value={
+                          recurrenceField.state.value ?? {
+                            frequency: 'monthly',
+                            interval: 1,
+                            dayOfMonth: 1,
+                          }
+                        }
+                        anchorDate={form.getFieldValue('date')}
+                        onChange={(next) => recurrenceField.handleChange(next)}
+                      />
+                    )}
                   </form.Field>
                 ) : null}
               </div>
+            )}
+          </form.Field>
+
+          <form.Field name="notes">
+            {(field) => (
+              <Label className="flex flex-col items-start gap-1">
+                Notes <span className="font-normal text-muted-foreground">(optional)</span>
+                <Textarea
+                  value={field.state.value}
+                  onChange={(e) => field.handleChange(e.target.value)}
+                  rows={2}
+                  placeholder="Called them, they’re waiving the late fee…"
+                  className="text-sm"
+                />
+              </Label>
             )}
           </form.Field>
 
@@ -445,6 +366,75 @@ export default function CardDialog({
           </form.Subscribe>
         </form>
       </DialogContent>
+
+      {newCategoryFor ? (
+        <NewCategoryDialog
+          type={newCategoryFor}
+          onClose={() => setNewCategoryFor(null)}
+          onCreate={async (name) => {
+            await onAddCategory(name, newCategoryFor)
+            form.setFieldValue('category', name)
+            setNewCategoryFor(null)
+          }}
+        />
+      ) : null}
+    </Dialog>
+  )
+}
+
+function NewCategoryDialog({
+  type,
+  onClose,
+  onCreate,
+}: {
+  type: CardType
+  onClose: () => void
+  onCreate: (name: string) => Promise<void>
+}) {
+  const [name, setName] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const submit = async () => {
+    const trimmed = name.trim()
+    if (!trimmed || saving) return
+    setSaving(true)
+    try {
+      await onCreate(trimmed)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="sm:max-w-xs">
+        <DialogHeader>
+          <DialogTitle>New {type} category</DialogTitle>
+        </DialogHeader>
+        <Label className="flex flex-col items-start gap-1">
+          Name
+          <Input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void submit()
+              }
+            }}
+            placeholder="Pet care"
+          />
+        </Label>
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button type="button" onClick={() => void submit()} disabled={!name.trim() || saving}>
+            {saving ? 'Adding…' : 'Add category'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
     </Dialog>
   )
 }
@@ -458,7 +448,7 @@ function FieldMessage({ errors }: { errors: Array<unknown> }) {
 export function toCardMutationArgs(values: CardFormValues) {
   return {
     type: values.type,
-    amount: values.amount,
+    amountCents: toCents(values.amount),
     description: values.description.trim(),
     date: fromDateInput(values.date),
     category: values.category,
@@ -466,6 +456,7 @@ export function toCardMutationArgs(values: CardFormValues) {
     recurring: values.recurring,
     recurrence: values.recurring ? (values.recurrence ?? undefined) : undefined,
     source: values.source.trim() || undefined,
+    notes: values.notes.trim() || undefined,
     status: values.status,
   }
 }

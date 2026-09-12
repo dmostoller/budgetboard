@@ -1,39 +1,62 @@
-/** Shared board vocabulary used by the UI, the AI tools and the Convex layer. */
+/**
+ * Shared board vocabulary used by the UI, the AI tools and the Convex layer.
+ *
+ * The recurrence maths and the money/series helpers live in `convex/` and are
+ * re-exported here rather than reimplemented: a rule that means one thing on
+ * the server and another in a chart is the bug this arrangement exists to
+ * prevent.
+ */
+
+export {
+  LAST_DAY_OF_MONTH,
+  LAST_WEEK_OF_MONTH,
+  WEEKDAYS,
+  describeRecurrence,
+  isWithinEnd,
+  nextOccurrence,
+  normalizeRecurrence,
+  occurrenceAt,
+  occurrenceDate,
+  occurrencesInRange,
+  totalOccurrences,
+} from '../../convex/recurrence'
+export type { NthWeekday, Recurrence, RecurrenceFrequency } from '../../convex/recurrence'
+
+export { cardCents, forecastFrom, projectOccurrences } from '../../convex/lib'
+
+import { cardCents, forecastFrom, projectOccurrences } from '../../convex/lib'
+import type { Recurrence } from '../../convex/recurrence'
 
 export const DAY = 24 * 60 * 60 * 1000
 
 export type CardType = 'income' | 'expense'
 export type CardStatus = 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
 export type CardPriority = 'low' | 'medium' | 'high'
-export type RecurrenceFrequency = 'weekly' | 'monthly'
-
-export interface Recurrence {
-  frequency: RecurrenceFrequency
-  /** Repeat every N weeks/months. */
-  interval: number
-  /** Weekly only, 0 (Sunday) - 6 (Saturday). */
-  weekday?: number
-  /** Monthly only, 1-31 (clamped to the last day of shorter months). */
-  dayOfMonth?: number
-}
 
 export interface Card {
   _id: string
   _creationTime: number
   userId: string
   type: CardType
-  amount: number
+  /** Whole cents. Read it through `cardCents` — older rows carry `amount`. */
+  amountCents?: number
+  /** Legacy float dollars, pre-migration. */
+  amount?: number
   description: string
   date: number
   category: string
   priority: CardPriority
   recurring: boolean
   recurrence?: Recurrence
+  seriesId?: string
+  seriesIndex?: number
   source?: string
+  notes?: string
   status: CardStatus
   order: number
   createdAt: number
   completedAt?: number
+  archivedAt?: number
 }
 
 export interface Lane {
@@ -89,12 +112,46 @@ export const HORIZON_OPTIONS = [
   { days: 365, label: '1 year' },
 ]
 
-export function formatCurrency(amount: number) {
-  return new Intl.NumberFormat('en-US', {
+export const CURRENCY_OPTIONS = [
+  { code: 'USD', label: 'US dollar ($)' },
+  { code: 'EUR', label: 'Euro (€)' },
+  { code: 'GBP', label: 'British pound (£)' },
+  { code: 'CAD', label: 'Canadian dollar (C$)' },
+  { code: 'AUD', label: 'Australian dollar (A$)' },
+  { code: 'JPY', label: 'Japanese yen (¥)' },
+  { code: 'INR', label: 'Indian rupee (₹)' },
+]
+
+export interface MoneyFormat {
+  currency: string
+  locale: string
+}
+
+export const DEFAULT_MONEY: MoneyFormat = { currency: 'USD', locale: 'en-US' }
+
+/**
+ * Format whole cents as money. Amounts are integers end to end — floats drift
+ * once you start summing a year of them.
+ */
+export function formatCents(cents: number, format: MoneyFormat = DEFAULT_MONEY) {
+  return new Intl.NumberFormat(format.locale, {
     style: 'currency',
-    currency: 'USD',
-    maximumFractionDigits: amount % 1 === 0 ? 0 : 2,
-  }).format(amount)
+    currency: format.currency,
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+  }).format(cents / 100)
+}
+
+/** Parse a user-typed amount ("12", "12.5", "1,200.55") into whole cents. */
+export function toCents(value: string | number): number {
+  if (typeof value === 'number') return Math.round(value * 100)
+  const cleaned = value.replace(/[^0-9.-]/g, '')
+  const parsed = Number.parseFloat(cleaned)
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0
+}
+
+/** Cents back to the decimal string an `<input type="number">` expects. */
+export function centsToInput(cents: number) {
+  return (cents / 100).toFixed(2).replace(/\.00$/, '')
 }
 
 export function formatDate(ms: number) {
@@ -118,90 +175,6 @@ export function fromDateInput(value: string) {
   return new Date(y, m - 1, d, 12).getTime()
 }
 
-export const WEEKDAYS = [
-  'Sunday',
-  'Monday',
-  'Tuesday',
-  'Wednesday',
-  'Thursday',
-  'Friday',
-  'Saturday',
-]
-
-function ordinal(n: number) {
-  if (n % 100 >= 11 && n % 100 <= 13) return `${n}th`
-  switch (n % 10) {
-    case 1:
-      return `${n}st`
-    case 2:
-      return `${n}nd`
-    case 3:
-      return `${n}rd`
-    default:
-      return `${n}th`
-  }
-}
-
-/** Human-readable summary of a recurrence rule, e.g. "Every 2 weeks on Wednesday". */
-export function describeRecurrence(recurrence: Recurrence): string {
-  if (recurrence.frequency === 'weekly') {
-    const weekday = WEEKDAYS[recurrence.weekday ?? 0]
-    return recurrence.interval === 1
-      ? `Weekly on ${weekday}`
-      : `Every ${recurrence.interval} weeks on ${weekday}`
-  }
-  const day = ordinal(recurrence.dayOfMonth ?? 1)
-  return recurrence.interval === 1
-    ? `Monthly on the ${day}`
-    : `Every ${recurrence.interval} months on the ${day}`
-}
-
-/** The next date a recurrence rule lands on, strictly after `fromDate`. */
-export function nextOccurrence(fromDate: number, recurrence: Recurrence): number {
-  const from = new Date(fromDate)
-
-  if (recurrence.frequency === 'weekly') {
-    const targetWeekday = recurrence.weekday ?? from.getDay()
-    const next = new Date(from)
-    next.setDate(next.getDate() + 1)
-    while (next.getDay() !== targetWeekday) next.setDate(next.getDate() + 1)
-    next.setDate(next.getDate() + (recurrence.interval - 1) * 7)
-    next.setHours(12, 0, 0, 0)
-    return next.getTime()
-  }
-
-  const day = recurrence.dayOfMonth ?? from.getDate()
-  const next = new Date(from.getFullYear(), from.getMonth() + recurrence.interval, 1, 12)
-  const daysInMonth = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate()
-  next.setDate(Math.min(day, daysInMonth))
-  return next.getTime()
-}
-
-/**
- * Every date within [now, horizonEnd] a card lands on for forecasting
- * purposes — just its own date for a one-off card, or every future
- * occurrence for a recurring one. The card's own date is always included
- * (even if overdue), but occurrences skipped between then and now are not
- * back-filled as a missed backlog.
- */
-export function occurrencesInRange(
-  card: Pick<Card, 'date' | 'recurring' | 'recurrence'>,
-  now: number,
-  horizonEnd: number,
-): Array<number> {
-  if (card.date > horizonEnd) return []
-  if (!card.recurring || !card.recurrence) return [card.date]
-
-  const dates = [card.date]
-  let cursor = card.date
-  for (let i = 0; i < 1000; i++) {
-    cursor = nextOccurrence(cursor, card.recurrence)
-    if (cursor > horizonEnd) break
-    if (cursor >= now) dates.push(cursor)
-  }
-  return dates
-}
-
 export type DateUrgency = 'overdue' | 'due-soon' | 'later' | 'done'
 
 export function urgency(card: Card, now = Date.now()): DateUrgency {
@@ -219,4 +192,231 @@ export function relativeDue(ms: number, now = Date.now()) {
   if (days < 0) return `${Math.abs(days)} days ago`
   if (days < 30) return `in ${days} days`
   return formatDate(ms)
+}
+
+/**
+ * Filters the board's search bar applies. Every field is optional and they
+ * combine with AND, which is how people expect a filter row to behave.
+ */
+export interface BoardFilters {
+  search?: string
+  categories?: Array<string>
+  types?: Array<CardType>
+  priorities?: Array<CardPriority>
+  recurringOnly?: boolean
+  minCents?: number
+  maxCents?: number
+}
+
+export const EMPTY_FILTERS: BoardFilters = {}
+
+export function hasActiveFilters(filters: BoardFilters) {
+  return Boolean(
+    filters.search?.trim() ||
+    filters.categories?.length ||
+    filters.types?.length ||
+    filters.priorities?.length ||
+    filters.recurringOnly ||
+    filters.minCents !== undefined ||
+    filters.maxCents !== undefined,
+  )
+}
+
+/** Apply the search bar's filters to a list of cards. Pure, so it is tested. */
+export function filterBoardCards<T extends Card>(cards: Array<T>, filters: BoardFilters): Array<T> {
+  const search = filters.search?.trim().toLowerCase()
+
+  return cards.filter((card) => {
+    if (filters.types?.length && !filters.types.includes(card.type)) return false
+    if (filters.priorities?.length && !filters.priorities.includes(card.priority)) return false
+    if (filters.categories?.length && !filters.categories.includes(card.category)) return false
+    if (filters.recurringOnly && !card.recurring) return false
+
+    const cents = cardCents(card)
+    if (filters.minCents !== undefined && cents < filters.minCents) return false
+    if (filters.maxCents !== undefined && cents > filters.maxCents) return false
+
+    if (search) {
+      const haystack =
+        `${card.description} ${card.source ?? ''} ${card.category} ${card.notes ?? ''}`.toLowerCase()
+      if (!haystack.includes(search)) return false
+    }
+
+    return true
+  })
+}
+
+/**
+ * Net cash flow per day across the horizon, as a running balance starting
+ * from zero.
+ *
+ * Zero is the deliberate baseline: this chart answers "does what comes in
+ * cover what goes out over this window", not "what will my account say".
+ */
+/** Midnight today, the left edge of every horizon window. */
+function horizonStart(now: number) {
+  const start = new Date(now)
+  start.setHours(0, 0, 0, 0)
+  return start.getTime()
+}
+
+/**
+ * Money landing on each day of the window, keyed by `YYYY-MM-DD`.
+ *
+ * Completed cards are single realized points; open ones project their series
+ * forward across the window.
+ */
+function dailyTotals(cards: Array<Card>, from: number, to: number) {
+  const income = new Map<string, number>()
+  const expense = new Map<string, number>()
+
+  const add = (map: Map<string, number>, key: string, value: number) =>
+    map.set(key, (map.get(key) ?? 0) + value)
+
+  for (const card of cards.filter((c) => isCompleted(c.status))) {
+    if (card.date < from || card.date > to) continue
+    add(card.type === 'income' ? income : expense, toDateInput(card.date), cardCents(card))
+  }
+
+  const open = cards.filter((c) => !isCompleted(c.status))
+  for (const { card, date } of projectOccurrences(open, from, to)) {
+    if (date < from || date > to) continue
+    add(card.type === 'income' ? income : expense, toDateInput(date), cardCents(card))
+  }
+
+  return { income, expense }
+}
+
+export function cashFlowSeries(cards: Array<Card>, horizonDays: number, now = Date.now()) {
+  const from = horizonStart(now)
+  const to = from + horizonDays * DAY
+
+  const { income: incomeByDay, expense: expenseByDay } = dailyTotals(cards, from, to)
+
+  let balance = 0
+  let income = 0
+  let expense = 0
+
+  return Array.from({ length: horizonDays + 1 }, (_, i) => {
+    const date = from + i * DAY
+    const key = toDateInput(date)
+    balance += (incomeByDay.get(key) ?? 0) - (expenseByDay.get(key) ?? 0)
+    income += incomeByDay.get(key) ?? 0
+    expense += expenseByDay.get(key) ?? 0
+    return {
+      date,
+      label: formatDate(date),
+      balance,
+      income,
+      expense,
+    }
+  })
+}
+
+export interface OutflowBucket {
+  /** Midnight at the bucket's first day. */
+  start: number
+  label: string
+  income: number
+  expense: number
+}
+
+/**
+ * Money in and out per period across the horizon, as discrete buckets rather
+ * than a running total.
+ *
+ * `cashFlowSeries` is cumulative, which deliberately smooths timing: a week
+ * where rent, insurance and a card payment all land together reads as a gentle
+ * slope. This answers the other question — which period actually gets squeezed.
+ *
+ * Buckets are weekly, except on short horizons where a week or two of bars
+ * says nothing; below `DAILY_BUCKET_CUTOFF_DAYS` it falls back to one bar
+ * per day. The final bucket is clipped to the end of the horizon, so a 30-day
+ * window ends in a 2-day bucket rather than running 5 days past the edge.
+ */
+export const DAILY_BUCKET_CUTOFF_DAYS = 14
+
+export function outflowSeries(
+  cards: Array<Card>,
+  horizonDays: number,
+  now = Date.now(),
+): Array<OutflowBucket> {
+  const from = horizonStart(now)
+  const to = from + horizonDays * DAY
+  const { income, expense } = dailyTotals(cards, from, to)
+
+  const bucketDays = horizonDays <= DAILY_BUCKET_CUTOFF_DAYS ? 1 : 7
+  const bucketCount = Math.ceil(horizonDays / bucketDays)
+
+  return Array.from({ length: bucketCount }, (_, i) => {
+    const start = from + i * bucketDays * DAY
+    // Clip the tail bucket so it never reaches past the horizon.
+    const days = Math.min(bucketDays, horizonDays - i * bucketDays)
+
+    let bucketIncome = 0
+    let bucketExpense = 0
+    for (let d = 0; d < days; d++) {
+      const key = toDateInput(start + d * DAY)
+      bucketIncome += income.get(key) ?? 0
+      bucketExpense += expense.get(key) ?? 0
+    }
+
+    return { start, label: formatDate(start), income: bucketIncome, expense: bucketExpense }
+  })
+}
+
+export interface ColumnForecast {
+  /** Occurrences implied within the horizon but not materialized as cards. */
+  count: number
+  /** Date of the furthest-out one, for "…through Sep 2027". */
+  through: number
+}
+
+/**
+ * What each column's recurring series imply beyond the cards that exist.
+ *
+ * The autoroll job only materializes a series a fixed window ahead
+ * (`rollAheadDays` in `convex/cards.ts`), while the charts forecast the full
+ * horizon — so a year-long horizon shows a year of paychecks in the chart and
+ * three of them on the board. This is what lets a column say so out loud
+ * rather than leaving the gap to be discovered.
+ *
+ * Only a series' furthest-out card forecasts, matching `projectOccurrences`;
+ * counting from every materialized occurrence would multiply the same future
+ * dates.
+ */
+export function forecastByStatus(
+  cards: Array<Card>,
+  horizonDays: number,
+  now = Date.now(),
+): Map<CardStatus, ColumnForecast> {
+  const from = horizonStart(now)
+  const to = from + horizonDays * DAY
+
+  const open = cards.filter((c) => !isCompleted(c.status))
+
+  const seriesTail = new Map<string, Card>()
+  for (const card of open) {
+    if (!card.seriesId) continue
+    const current = seriesTail.get(card.seriesId)
+    if (!current || card.date > current.date) seriesTail.set(card.seriesId, card)
+  }
+
+  const byStatus = new Map<CardStatus, ColumnForecast>()
+
+  for (const card of open) {
+    const isTail = !card.seriesId || seriesTail.get(card.seriesId)?._id === card._id
+    if (!isTail) continue
+
+    const dates = forecastFrom(card, from, to)
+    if (dates.length === 0) continue
+
+    const current = byStatus.get(card.status) ?? { count: 0, through: 0 }
+    byStatus.set(card.status, {
+      count: current.count + dates.length,
+      through: Math.max(current.through, dates.at(-1) ?? 0),
+    })
+  }
+
+  return byStatus
 }

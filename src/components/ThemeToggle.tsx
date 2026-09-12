@@ -1,12 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 
 type ThemeMode = 'light' | 'dark' | 'auto'
 
@@ -66,23 +60,23 @@ export default function ThemeToggle() {
     window.localStorage.setItem('theme', nextMode)
   }
 
-  const Icon = MODES.find((m) => m.mode === mode)?.icon ?? Monitor
+  function cycleMode() {
+    const index = MODES.findIndex((m) => m.mode === mode)
+    const nextMode = MODES[(index + 1) % MODES.length].mode
+    selectMode(nextMode)
+  }
+
+  const current = MODES.find((m) => m.mode === mode) ?? MODES[2]
+  const Icon = current.icon
 
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon" aria-label={`Theme: ${mode}. Change theme.`} />}
-      >
-        <Icon />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        {MODES.map(({ mode: m, label, icon: ItemIcon }) => (
-          <DropdownMenuItem key={m} onClick={() => selectMode(m)}>
-            <ItemIcon />
-            {label}
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <Button
+      variant="ghost"
+      size="icon"
+      aria-label={`Theme: ${current.label}. Click to switch theme.`}
+      onClick={cycleMode}
+    >
+      <Icon />
+    </Button>
   )
 }
