@@ -131,8 +131,10 @@ export const boardSummary = internalQuery({
 export const listUserIds = internalQuery({
   args: {},
   handler: async (ctx) => {
-    const rows = await ctx.db.query('settings').collect()
-    const cards = await ctx.db.query('cards').collect()
+    const [rows, cards] = await Promise.all([
+      ctx.db.query('settings').collect(),
+      ctx.db.query('cards').collect(),
+    ])
     const ids = new Set<string>()
     for (const row of rows) ids.add(row.userId)
     for (const card of cards) ids.add(card.userId)

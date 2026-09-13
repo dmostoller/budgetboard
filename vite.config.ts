@@ -13,10 +13,18 @@ const config = defineConfig({
   plugins: [
     devtools(),
     tailwindcss(),
-    tanstackStart(),
+    tanstackStart({
+      router: {
+        // @ts-expect-error -- autoCodeSplitting is the stable flag at runtime,
+        // but @tanstack/start-plugin-core's types still only expose the old
+        // experimental.enableCodeSplitting name.
+        autoCodeSplitting: true,
+      },
+    }),
     // Nitro picks its own preset from the host: `vercel` when Vercel sets
     // VERCEL=1 during the build, `node-server` locally.
     nitroV2Plugin({
+      compatibilityDate: '2026-09-13',
       externals: {
         // Better Auth reaches into subpath exports (`@better-auth/utils/random`
         // and friends) that Nitro's dependency tracing does not follow, which

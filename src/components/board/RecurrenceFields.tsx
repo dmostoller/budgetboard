@@ -315,7 +315,7 @@ export default function RecurrenceFields({
           Until
           <Input
             type="date"
-            value={toDateInput(value.endsOn ?? Date.now())}
+            value={toDateInput(value.endsOn ?? fromDateInput(anchorDate))}
             onChange={(e) =>
               e.target.value && onChange({ ...value, endsOn: fromDateInput(e.target.value) })
             }

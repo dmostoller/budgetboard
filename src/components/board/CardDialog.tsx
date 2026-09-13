@@ -87,13 +87,14 @@ export default function CardDialog({
   // `window.prompt` blocks the whole page, cannot be styled, and is silently
   // suppressed in some embedded browsers — a real dialog instead.
   const [newCategoryFor, setNewCategoryFor] = useState<CardType | null>(null)
+  const [defaultDate] = useState(() => card?.date ?? Date.now())
 
   const form = useForm({
     defaultValues: {
       type: initialType,
       amount: card ? centsToInput(cardCents(card)) : '',
       description: card?.description ?? '',
-      date: toDateInput(card?.date ?? Date.now()),
+      date: toDateInput(defaultDate),
       category: card?.category ?? categories[initialType][0],
       priority: card?.priority ?? 'medium',
       recurring: card?.recurring ?? false,
@@ -398,11 +399,7 @@ function NewCategoryDialog({
     const trimmed = name.trim()
     if (!trimmed || saving) return
     setSaving(true)
-    try {
-      await onCreate(trimmed)
-    } finally {
-      setSaving(false)
-    }
+    await onCreate(trimmed).finally(() => setSaving(false))
   }
 
   return (

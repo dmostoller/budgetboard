@@ -57,6 +57,8 @@ export default function AppConvexProvider({ children }: { children: React.ReactN
   return (
     <ConvexProviderWithAuth
       client={convexQueryClient.convexClient}
+      // ConvexProviderWithAuth's public API requires a hook reference here; it calls useAuth() internally.
+      // react-doctor-disable-next-line react-hooks-js/hooks
       useAuth={useBetterAuthForConvex}
     >
       {children}

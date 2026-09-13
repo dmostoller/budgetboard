@@ -95,12 +95,9 @@ export const remove = mutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .collect()
 
-    let reassigned = 0
-    for (const card of cards) {
-      if (card.category !== category.name) continue
-      await ctx.db.patch(card._id, { category: fallback })
-      reassigned++
-    }
+    const toReassign = cards.filter((card) => card.category === category.name)
+    await Promise.all(toReassign.map((card) => ctx.db.patch(card._id, { category: fallback })))
+    const reassigned = toReassign.length
 
     // A budget attached to a category that no longer exists would never be
     // measurable again.

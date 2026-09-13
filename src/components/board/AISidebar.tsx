@@ -70,14 +70,17 @@ function Messages({
                   <MessageContent>
                     <Bubble variant={role === 'user' ? 'default' : 'muted'}>
                       <BubbleContent>
+                        {/* Parts only ever append while a message streams in; they
+                            never reorder or get filtered, so the index is stable. */}
                         {parts.map((part, index) => {
+                          const partKey = `${id}-${index}`
                           if (part.type === 'text' && part.content) {
-                            return <MarkdownContent key={index}>{part.content}</MarkdownContent>
+                            return <MarkdownContent key={partKey}>{part.content}</MarkdownContent>
                           }
                           if (part.type === 'tool-call') {
                             const output = part.output as { summary?: string } | undefined
                             return (
-                              <ToolLine key={index} name={part.name} summary={output?.summary} />
+                              <ToolLine key={partKey} name={part.name} summary={output?.summary} />
                             )
                           }
                           return null

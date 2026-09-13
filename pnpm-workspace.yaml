@@ -1,11 +1,16 @@
 onlyBuiltDependencies:
+  - '@google/genai'
   - esbuild
   - lightningcss
+  - protobufjs
   - sharp
+minimumReleaseAge: 10080
+blockExoticSubdeps: true
+trustPolicy: no-downgrade
 catalog:
-  vite: npm:@voidzero-dev/vite-plus-core@0.3.0
+  vite: npm:@voidzero-dev/vite-plus-core@0.3.1
   vitest: 4.1.11
-  vite-plus: 0.3.0
+  vite-plus: 0.3.1
 overrides:
   vite@*: 'catalog:'
   vitest@*: 'catalog:'

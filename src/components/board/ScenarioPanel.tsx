@@ -51,13 +51,13 @@ export default function ScenarioPanel({
   onChange: (next: Scenario) => void
   onClose: () => void
 }) {
-  const [draft, setDraft] = useState({
+  const [draft, setDraft] = useState(() => ({
     description: '',
     amount: '',
     type: 'expense' as CardType,
     date: toDateInput(Date.now()),
     recurringMonthly: true,
-  })
+  }))
 
   const comparison = compareScenario(cards, scenario, horizonDays)
   const active = isScenarioActive(scenario)

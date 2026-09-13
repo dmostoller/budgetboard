@@ -22,16 +22,18 @@ export const toCents = internalMutation({
   args: {},
   handler: async (ctx) => {
     const cards = await ctx.db.query('cards').collect()
-    let converted = 0
+    const toConvert = cards.flatMap((card) =>
+      card.amountCents === undefined && card.amount !== undefined
+        ? [{ id: card._id, amount: card.amount }]
+        : [],
+    )
+    await Promise.all(
+      toConvert.map(({ id, amount }) =>
+        ctx.db.patch(id, { amountCents: Math.round(amount * 100) }),
+      ),
+    )
 
-    for (const card of cards) {
-      if (card.amountCents !== undefined) continue
-      if (card.amount === undefined) continue
-      await ctx.db.patch(card._id, { amountCents: Math.round(card.amount * 100) })
-      converted++
-    }
-
-    return { converted, total: cards.length }
+    return { converted: toConvert.length, total: cards.length }
   },
 })
 
@@ -47,17 +49,15 @@ export const normalizeRules = internalMutation({
   args: {},
   handler: async (ctx) => {
     const cards = await ctx.db.query('cards').collect()
-    let normalized = 0
-
-    for (const card of cards) {
-      if (!card.recurring || !card.recurrence) continue
+    const toNormalize = cards.flatMap((card) => {
+      if (!card.recurring || !card.recurrence) return []
       const rule = normalizeRecurrence(card.recurrence, card.date)
-      if (JSON.stringify(rule) === JSON.stringify(card.recurrence)) continue
-      await ctx.db.patch(card._id, { recurrence: rule })
-      normalized++
-    }
+      if (JSON.stringify(rule) === JSON.stringify(card.recurrence)) return []
+      return [{ id: card._id, rule }]
+    })
+    await Promise.all(toNormalize.map(({ id, rule }) => ctx.db.patch(id, { recurrence: rule })))
 
-    return { normalized, total: cards.length }
+    return { normalized: toNormalize.length, total: cards.length }
   },
 })
 
@@ -70,15 +70,13 @@ export const adoptSeriesIds = internalMutation({
   args: {},
   handler: async (ctx) => {
     const cards = await ctx.db.query('cards').collect()
-    let adopted = 0
+    const toAdopt = cards.filter(
+      (card) => card.recurring && card.recurrence && card.seriesId === undefined,
+    )
+    await Promise.all(
+      toAdopt.map((card) => ctx.db.patch(card._id, { seriesId: card._id, seriesIndex: 0 })),
+    )
 
-    for (const card of cards) {
-      if (!card.recurring || !card.recurrence) continue
-      if (card.seriesId !== undefined) continue
-      await ctx.db.patch(card._id, { seriesId: card._id, seriesIndex: 0 })
-      adopted++
-    }
-
-    return { adopted, total: cards.length }
+    return { adopted: toAdopt.length, total: cards.length }
   },
 })

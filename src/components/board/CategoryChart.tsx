@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
@@ -28,7 +29,7 @@ export default function CategoryChart({
   money?: MoneyFormat
   budgetsByCategory?: Record<string, number>
 }) {
-  const now = Date.now()
+  const [now] = useState(() => Date.now())
   const horizonEnd = now + horizonDays * DAY
 
   const totals = new Map<string, number>()

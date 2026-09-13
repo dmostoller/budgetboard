@@ -103,6 +103,7 @@ export default function Board() {
   const [refreshingInsights, setRefreshingInsights] = useState(false)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [archiving, setArchiving] = useState(false)
+  const [now] = useState(() => Date.now())
 
   const horizonDays = settings?.horizonDays ?? 30
   const showCompleted = settings?.showCompleted ?? true
@@ -124,14 +125,14 @@ export default function Board() {
 
   const withinHorizon = useMemo(() => {
     if (!cards) return []
-    const horizon = Date.now() + horizonDays * DAY
+    const horizon = now + horizonDays * DAY
     return cards.filter((card) => {
       if (!showCompleted && isCompleted(card.status)) return false
       // Completed cards stay visible regardless of horizon so a just-paid bill
       // does not vanish from under the cursor.
       return card.date <= horizon || isCompleted(card.status)
     })
-  }, [cards, horizonDays, showCompleted])
+  }, [cards, horizonDays, showCompleted, now])
 
   const visible = useMemo(() => filterBoardCards(withinHorizon, filters), [withinHorizon, filters])
 

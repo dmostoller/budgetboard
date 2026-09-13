@@ -235,11 +235,12 @@ export const update = mutation({
         .withIndex('by_series', (q) => q.eq('seriesId', card.seriesId))
         .collect()
 
-      for (const sibling of siblings) {
-        if (sibling._id === id || sibling.date <= card.date) continue
-        if (sibling.userId !== userId) continue
-        await ctx.db.patch(sibling._id, shared)
-      }
+      await Promise.all(
+        siblings
+          .filter((sibling) => sibling._id !== id && sibling.date > card.date)
+          .filter((sibling) => sibling.userId === userId)
+          .map((sibling) => ctx.db.patch(sibling._id, shared)),
+      )
     }
 
     if (isCompletedStatus((patch.status as string | undefined) ?? card.status)) {
@@ -502,13 +503,11 @@ export const archiveCompleted = mutation({
     const cards = await liveCards(ctx, userId)
     const now = Date.now()
 
-    const archivedIds: Array<Id<'cards'>> = []
-    for (const card of cards) {
-      if (!isCompletedStatus(card.status)) continue
-      if (card.date > cutoff) continue
-      await ctx.db.patch(card._id, { archivedAt: now })
-      archivedIds.push(card._id)
-    }
+    const toArchive = cards.filter(
+      (card) => isCompletedStatus(card.status) && card.date <= cutoff,
+    )
+    await Promise.all(toArchive.map((card) => ctx.db.patch(card._id, { archivedAt: now })))
+    const archivedIds = toArchive.map((card) => card._id)
     // Ids are returned (not just a count) so the UI can offer an undo that
     // unarchives exactly these cards, not "whatever is archived now".
     return { archived: archivedIds.length, archivedIds }
@@ -519,10 +518,12 @@ export const unarchiveMany = mutation({
   args: { ids: v.array(v.id('cards')) },
   handler: async (ctx, { ids }) => {
     const userId = await requireUserId(ctx)
-    for (const id of ids) {
-      await ownedCard(ctx, userId, id)
-      await ctx.db.patch(id, { archivedAt: undefined })
-    }
+    await Promise.all(
+      ids.map(async (id) => {
+        await ownedCard(ctx, userId, id)
+        await ctx.db.patch(id, { archivedAt: undefined })
+      }),
+    )
     return null
   },
 })

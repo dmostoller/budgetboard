@@ -32,14 +32,16 @@ export const dismiss = mutation({
     const userId = await requireUserId(ctx)
     const now = Date.now()
 
-    for (const alertId of alertIds) {
-      const existing = await ctx.db
-        .query('alertDismissals')
-        .withIndex('by_user_alert', (q) => q.eq('userId', userId).eq('alertId', alertId))
-        .unique()
-      if (existing) continue
-      await ctx.db.insert('alertDismissals', { userId, alertId, dismissedAt: now })
-    }
+    await Promise.all(
+      alertIds.map(async (alertId) => {
+        const existing = await ctx.db
+          .query('alertDismissals')
+          .withIndex('by_user_alert', (q) => q.eq('userId', userId).eq('alertId', alertId))
+          .unique()
+        if (existing) return
+        await ctx.db.insert('alertDismissals', { userId, alertId, dismissedAt: now })
+      }),
+    )
   },
 })
 
@@ -69,12 +71,8 @@ export const prune = mutation({
       .withIndex('by_user', (q) => q.eq('userId', userId))
       .collect()
 
-    let pruned = 0
-    for (const row of rows) {
-      if (live.has(row.alertId)) continue
-      await ctx.db.delete(row._id)
-      pruned++
-    }
-    return { pruned }
+    const toDelete = rows.filter((row) => !live.has(row.alertId))
+    await Promise.all(toDelete.map((row) => ctx.db.delete(row._id)))
+    return { pruned: toDelete.length }
   },
 })

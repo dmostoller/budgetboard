@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useState } from 'react'
 import { AlertTriangle, Bell, CalendarClock, Check, Clock } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -32,7 +32,8 @@ export default function NotificationsBell({
   onDismiss: (alertIds: Array<string>) => void
   onOpenCard: (cardId: string) => void
 }) {
-  const alerts = useMemo(() => buildAlerts(cards, Date.now(), money), [cards, money])
+  const [now] = useState(() => Date.now())
+  const alerts = buildAlerts(cards, now, money)
   const visible = alerts.filter((a) => !dismissed.includes(a.id))
 
   const dismiss = (alert: Alert) => onDismiss([alert.id])
