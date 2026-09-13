@@ -359,9 +359,9 @@ export const generateForAllUsers = internalAction({
   args: {},
   handler: async (ctx) => {
     const userIds: Array<string> = await ctx.runQuery(internal.insights.listUserIds, {})
-    for (const userId of userIds) {
-      await ctx.runAction(internal.insights.generateForUser, { userId })
-    }
+    await Promise.all(
+      userIds.map((userId) => ctx.runAction(internal.insights.generateForUser, { userId })),
+    )
     return { users: userIds.length }
   },
 })

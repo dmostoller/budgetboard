@@ -2,6 +2,11 @@
 
 import * as React from 'react'
 import { cn } from 'cn'
+// This shadcn chart wrapper is only imported by CashFlowChart/CategoryChart/OutflowChart,
+// each already loaded via React.lazy() from Board.tsx, so recharts never lands in the
+// eager bundle — confirmed with `vp build` (no "recharts" string in index-*.js; chart.tsx
+// and each chart component get their own chunk).
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import * as RechartsPrimitive from 'recharts'
 import type { TooltipValueType } from 'recharts'
 
@@ -134,6 +139,13 @@ function ChartTooltipContent({
   >) {
   const { config } = useChart()
 
+  // The early return below (`!active || !payload?.length`) is what recharts hits on
+  // almost every render — this memo only does real work while a tooltip is actively
+  // showing, and even then it bails out itself via the same `!payload?.length` check.
+  // The canonical fix recipe for this rule says not to add a component boundary just to
+  // move a hook below a branch without profiling evidence of real wasted work, and this
+  // is shadcn's generated chart wrapper, not app code we want to fork from upstream.
+  // react-doctor-disable-next-line react-doctor/rerender-memo-before-early-return
   const tooltipLabel = React.useMemo(() => {
     if (hideLabel || !payload?.length) {
       return null

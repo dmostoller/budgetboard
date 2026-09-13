@@ -1,3 +1,8 @@
+// This file is only ever reached through Board.tsx's `lazy(() => import('./CashFlowChart'))`,
+// so recharts already ships in its own chunk, never the eager bundle — confirmed via
+// `vp build`, where index-*.js contains no "recharts" and CashFlowChart/chart get their
+// own asset files. react-doctor's static import scan can't see that upstream boundary.
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { Area, AreaChart, CartesianGrid, Line, ReferenceLine, XAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'

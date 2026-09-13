@@ -60,19 +60,28 @@ export default function RecurrenceFields({
   const mode = monthlyMode(value)
   const ends = endMode(value)
 
-  const setEndMode = (next: EndMode) => {
-    const { endsAfter: _a, endsOn: _o, ...rest } = value
-    if (next === 'after') return onChange({ ...rest, endsAfter: 4 })
-    if (next === 'on') {
-      const until = new Date(seed)
-      until.setFullYear(until.getFullYear() + 1)
-      return onChange({ ...rest, endsOn: until.getTime() })
-    }
-    onChange(rest)
-  }
-
   return (
     <div className="grid grid-cols-2 gap-3 pl-6">
+      <RecurrenceFrequencyFields value={value} seed={seed} onChange={onChange} />
+      <RecurrenceOnFields value={value} seed={seed} mode={mode} onChange={onChange} />
+      <RecurrenceEndsFields value={value} anchorDate={anchorDate} ends={ends} onChange={onChange} />
+
+      <p className="col-span-2 text-xs text-muted-foreground">{describeRecurrence(value)}</p>
+    </div>
+  )
+}
+
+function RecurrenceFrequencyFields({
+  value,
+  seed,
+  onChange,
+}: {
+  value: Recurrence
+  seed: Date
+  onChange: (next: Recurrence) => void
+}) {
+  return (
+    <>
       <Label className="flex flex-col items-start gap-1">
         Repeats
         <Select
@@ -124,160 +133,201 @@ export default function RecurrenceFields({
           </span>
         </div>
       </Label>
+    </>
+  )
+}
 
-      {value.frequency === 'weekly' ? (
+function RecurrenceOnFields({
+  value,
+  seed,
+  mode,
+  onChange,
+}: {
+  value: Recurrence
+  seed: Date
+  mode: MonthlyMode
+  onChange: (next: Recurrence) => void
+}) {
+  if (value.frequency === 'weekly') {
+    return (
+      <Label className="col-span-2 flex flex-col items-start gap-1">
+        On
+        <Select
+          value={String(value.weekday ?? seed.getDay())}
+          onValueChange={(weekday) => weekday && onChange({ ...value, weekday: Number(weekday) })}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue>{(weekday: string) => WEEKDAYS[Number(weekday)]}</SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            {WEEKDAYS.map((label, index) => (
+              <SelectItem key={label} value={String(index)}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </Label>
+    )
+  }
+
+  return (
+    <>
+      <Label className="col-span-2 flex flex-col items-start gap-1">
+        On
+        <Select
+          value={mode}
+          onValueChange={(next) => {
+            if (!next) return
+            if (next === 'weekday') {
+              // Seed from the card's own date so switching modes keeps
+              // the same day: "the 9th" becomes "the second Friday".
+              const ordinal = Math.min(4, Math.ceil(seed.getDate() / 7))
+              onChange({
+                ...value,
+                dayOfMonth: undefined,
+                nthWeekday: { ordinal, weekday: seed.getDay() },
+              })
+            } else {
+              onChange({ ...value, nthWeekday: undefined, dayOfMonth: seed.getDate() })
+            }
+          }}
+        >
+          <SelectTrigger className="w-full">
+            <SelectValue>
+              {(m: string) => (m === 'weekday' ? 'A day of the week' : 'A day of the month')}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="day">A day of the month</SelectItem>
+            <SelectItem value="weekday">A day of the week</SelectItem>
+          </SelectContent>
+        </Select>
+      </Label>
+
+      {mode === 'day' ? (
         <Label className="col-span-2 flex flex-col items-start gap-1">
-          On
-          <Select
-            value={String(value.weekday ?? seed.getDay())}
-            onValueChange={(weekday) => weekday && onChange({ ...value, weekday: Number(weekday) })}
-          >
-            <SelectTrigger className="w-full">
-              <SelectValue>{(weekday: string) => WEEKDAYS[Number(weekday)]}</SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {WEEKDAYS.map((label, index) => (
-                <SelectItem key={label} value={String(index)}>
-                  {label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          Day
+          <div className="flex w-full items-center gap-2">
+            <Input
+              type="number"
+              min="1"
+              max="31"
+              disabled={value.dayOfMonth === LAST_DAY_OF_MONTH}
+              value={
+                value.dayOfMonth === LAST_DAY_OF_MONTH ? '' : (value.dayOfMonth ?? seed.getDate())
+              }
+              onChange={(e) =>
+                onChange({
+                  ...value,
+                  dayOfMonth: Math.min(31, Math.max(1, Number(e.target.value) || 1)),
+                })
+              }
+            />
+            <label className="flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={value.dayOfMonth === LAST_DAY_OF_MONTH}
+                onChange={(e) =>
+                  onChange({
+                    ...value,
+                    dayOfMonth: e.target.checked ? LAST_DAY_OF_MONTH : seed.getDate(),
+                  })
+                }
+              />
+              Last day
+            </label>
+          </div>
         </Label>
       ) : (
         <>
-          <Label className="col-span-2 flex flex-col items-start gap-1">
-            On
+          <Label className="flex flex-col items-start gap-1">
+            Which
             <Select
-              value={mode}
-              onValueChange={(next) => {
-                if (!next) return
-                if (next === 'weekday') {
-                  // Seed from the card's own date so switching modes keeps
-                  // the same day: "the 9th" becomes "the second Friday".
-                  const ordinal = Math.min(4, Math.ceil(seed.getDate() / 7))
-                  onChange({
-                    ...value,
-                    dayOfMonth: undefined,
-                    nthWeekday: { ordinal, weekday: seed.getDay() },
-                  })
-                } else {
-                  onChange({ ...value, nthWeekday: undefined, dayOfMonth: seed.getDate() })
-                }
-              }}
+              value={String(value.nthWeekday?.ordinal ?? 1)}
+              onValueChange={(ordinal) =>
+                ordinal &&
+                onChange({
+                  ...value,
+                  nthWeekday: {
+                    ordinal: Number(ordinal),
+                    weekday: value.nthWeekday?.weekday ?? seed.getDay(),
+                  },
+                })
+              }
             >
               <SelectTrigger className="w-full">
                 <SelectValue>
-                  {(m: string) => (m === 'weekday' ? 'A day of the week' : 'A day of the month')}
+                  {(o: string) => ORDINALS.find((x) => x.value === o)?.label ?? o}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="day">A day of the month</SelectItem>
-                <SelectItem value="weekday">A day of the week</SelectItem>
+                {ORDINALS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>
+                    {o.label}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </Label>
 
-          {mode === 'day' ? (
-            <Label className="col-span-2 flex flex-col items-start gap-1">
-              Day
-              <div className="flex w-full items-center gap-2">
-                <Input
-                  type="number"
-                  min="1"
-                  max="31"
-                  disabled={value.dayOfMonth === LAST_DAY_OF_MONTH}
-                  value={
-                    value.dayOfMonth === LAST_DAY_OF_MONTH
-                      ? ''
-                      : (value.dayOfMonth ?? seed.getDate())
-                  }
-                  onChange={(e) =>
-                    onChange({
-                      ...value,
-                      dayOfMonth: Math.min(31, Math.max(1, Number(e.target.value) || 1)),
-                    })
-                  }
-                />
-                <label className="flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-muted-foreground">
-                  <input
-                    type="checkbox"
-                    checked={value.dayOfMonth === LAST_DAY_OF_MONTH}
-                    onChange={(e) =>
-                      onChange({
-                        ...value,
-                        dayOfMonth: e.target.checked ? LAST_DAY_OF_MONTH : seed.getDate(),
-                      })
-                    }
-                  />
-                  Last day
-                </label>
-              </div>
-            </Label>
-          ) : (
-            <>
-              <Label className="flex flex-col items-start gap-1">
-                Which
-                <Select
-                  value={String(value.nthWeekday?.ordinal ?? 1)}
-                  onValueChange={(ordinal) =>
-                    ordinal &&
-                    onChange({
-                      ...value,
-                      nthWeekday: {
-                        ordinal: Number(ordinal),
-                        weekday: value.nthWeekday?.weekday ?? seed.getDay(),
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue>
-                      {(o: string) => ORDINALS.find((x) => x.value === o)?.label ?? o}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ORDINALS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
-                        {o.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Label>
-
-              <Label className="flex flex-col items-start gap-1">
-                Weekday
-                <Select
-                  value={String(value.nthWeekday?.weekday ?? seed.getDay())}
-                  onValueChange={(weekday) =>
-                    weekday &&
-                    onChange({
-                      ...value,
-                      nthWeekday: {
-                        ordinal: value.nthWeekday?.ordinal ?? 1,
-                        weekday: Number(weekday),
-                      },
-                    })
-                  }
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue>{(w: string) => WEEKDAYS[Number(w)]}</SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {WEEKDAYS.map((label, index) => (
-                      <SelectItem key={label} value={String(index)}>
-                        {label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </Label>
-            </>
-          )}
+          <Label className="flex flex-col items-start gap-1">
+            Weekday
+            <Select
+              value={String(value.nthWeekday?.weekday ?? seed.getDay())}
+              onValueChange={(weekday) =>
+                weekday &&
+                onChange({
+                  ...value,
+                  nthWeekday: {
+                    ordinal: value.nthWeekday?.ordinal ?? 1,
+                    weekday: Number(weekday),
+                  },
+                })
+              }
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>{(w: string) => WEEKDAYS[Number(w)]}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {WEEKDAYS.map((label, index) => (
+                  <SelectItem key={label} value={String(index)}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Label>
         </>
       )}
+    </>
+  )
+}
 
+function RecurrenceEndsFields({
+  value,
+  anchorDate,
+  ends,
+  onChange,
+}: {
+  value: Recurrence
+  anchorDate: string
+  ends: EndMode
+  onChange: (next: Recurrence) => void
+}) {
+  const setEndMode = (next: EndMode) => {
+    const { endsAfter: _a, endsOn: _o, ...rest } = value
+    if (next === 'after') return onChange({ ...rest, endsAfter: 4 })
+    if (next === 'on') {
+      const until = new Date(fromDateInput(anchorDate))
+      until.setFullYear(until.getFullYear() + 1)
+      return onChange({ ...rest, endsOn: until.getTime() })
+    }
+    onChange(rest)
+  }
+
+  return (
+    <>
       <Label className="flex flex-col items-start gap-1">
         Ends
         <Select value={ends} onValueChange={(next) => next && setEndMode(next as EndMode)}>
@@ -324,8 +374,6 @@ export default function RecurrenceFields({
       ) : (
         <div />
       )}
-
-      <p className="col-span-2 text-xs text-muted-foreground">{describeRecurrence(value)}</p>
-    </div>
+    </>
   )
 }

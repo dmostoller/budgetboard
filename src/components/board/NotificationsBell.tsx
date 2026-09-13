@@ -34,7 +34,8 @@ export default function NotificationsBell({
 }) {
   const [now] = useState(() => Date.now())
   const alerts = buildAlerts(cards, now, money)
-  const visible = alerts.filter((a) => !dismissed.includes(a.id))
+  const dismissedSet = new Set(dismissed)
+  const visible = alerts.filter((a) => !dismissedSet.has(a.id))
 
   const dismiss = (alert: Alert) => onDismiss([alert.id])
   const dismissAll = () => onDismiss(visible.map((a) => a.id))

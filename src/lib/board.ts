@@ -225,11 +225,14 @@ export function hasActiveFilters(filters: BoardFilters) {
 /** Apply the search bar's filters to a list of cards. Pure, so it is tested. */
 export function filterBoardCards<T extends Card>(cards: Array<T>, filters: BoardFilters): Array<T> {
   const search = filters.search?.trim().toLowerCase()
+  const typeSet = filters.types?.length ? new Set(filters.types) : undefined
+  const prioritySet = filters.priorities?.length ? new Set(filters.priorities) : undefined
+  const categorySet = filters.categories?.length ? new Set(filters.categories) : undefined
 
   return cards.filter((card) => {
-    if (filters.types?.length && !filters.types.includes(card.type)) return false
-    if (filters.priorities?.length && !filters.priorities.includes(card.priority)) return false
-    if (filters.categories?.length && !filters.categories.includes(card.category)) return false
+    if (typeSet && !typeSet.has(card.type)) return false
+    if (prioritySet && !prioritySet.has(card.priority)) return false
+    if (categorySet && !categorySet.has(card.category)) return false
     if (filters.recurringOnly && !card.recurring) return false
 
     const cents = cardCents(card)

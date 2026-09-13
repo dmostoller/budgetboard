@@ -33,7 +33,7 @@ export default function Toaster() {
               type="button"
               onClick={() => void runToastAction(toast.id)}
               disabled={toast.pending}
-              className="mt-px shrink-0 inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-50"
+              className="mt-px inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-xs font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-50"
             >
               <Undo2 size={12} />
               {toast.pending ? 'Undoing…' : toast.action.label}

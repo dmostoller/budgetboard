@@ -9,9 +9,18 @@ import { cn } from '@/lib/utils'
 import { cardCents, formatCents } from '#/lib/board'
 import type { Card, CardStatus, ColumnForecast, MoneyFormat } from '#/lib/board'
 
-/** "Sep 2027" — the granularity a forecast horizon deserves. */
+/**
+ * "Sep 2027" — the granularity a forecast horizon deserves.
+ *
+ * Pinned to UTC so the server and the browser always render the same month,
+ * even for a date that falls right at a local midnight boundary.
+ */
 function monthYear(ms: number) {
-  return new Date(ms).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+  return new Date(ms).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 export default function Column({
@@ -57,7 +66,7 @@ export default function Column({
           <Badge variant="secondary">{cards.length}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold tabular-nums text-muted-foreground">
+          <span className="text-xs font-semibold text-muted-foreground tabular-nums">
             {formatCents(total, money)}
           </span>
           <Button

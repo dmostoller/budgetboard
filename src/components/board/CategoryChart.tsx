@@ -1,4 +1,7 @@
 import { useState } from 'react'
+// Only reached through Board.tsx's lazy(() => import('./CategoryChart')); recharts is
+// already code-split away from the eager bundle (verified with `vp build`).
+// react-doctor-disable-next-line react-doctor/prefer-dynamic-import
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis } from 'recharts'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'

@@ -41,8 +41,9 @@ export const list = query({
       : []
 
     const merge = (defaults: Array<string>, type: 'income' | 'expense') => {
+      const defaultSet = new Set(defaults)
       const names = custom.filter((c) => c.type === type).map((c) => c.name)
-      return [...defaults, ...names.filter((n) => !defaults.includes(n))]
+      return [...defaults, ...names.filter((n) => !defaultSet.has(n))]
     }
 
     return {

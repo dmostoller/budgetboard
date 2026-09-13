@@ -503,9 +503,7 @@ export const archiveCompleted = mutation({
     const cards = await liveCards(ctx, userId)
     const now = Date.now()
 
-    const toArchive = cards.filter(
-      (card) => isCompletedStatus(card.status) && card.date <= cutoff,
-    )
+    const toArchive = cards.filter((card) => isCompletedStatus(card.status) && card.date <= cutoff)
     await Promise.all(toArchive.map((card) => ctx.db.patch(card._id, { archivedAt: now })))
     const archivedIds = toArchive.map((card) => card._id)
     // Ids are returned (not just a count) so the UI can offer an undo that

@@ -13,7 +13,7 @@ export default function Header() {
           <img
             src="/logo.png"
             alt=""
-            className="h-6 w-6 opacity-80 transition-opacity group-hover:opacity-100"
+            className="size-6 opacity-80 transition-opacity group-hover:opacity-100"
           />
           <span className="text-lg font-semibold tracking-tight text-foreground">Budget Board</span>
         </Link>

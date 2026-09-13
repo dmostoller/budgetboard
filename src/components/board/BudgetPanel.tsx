@@ -40,13 +40,12 @@ function BudgetRow({ budget, money }: { budget: BudgetProgress; money?: MoneyFor
         </span>
       </div>
 
+      {/* The spent/committed split is two overlapping fills, which <meter> */}
+      {/* can't render — it holds one value. Real semantics live in the */}
+      {/* sr-only <meter> below; this bar is decorative. */}
       <div
         className="mt-1 flex h-2 w-full overflow-hidden rounded-full bg-muted"
-        role="meter"
-        aria-valuenow={budget.projectedCents}
-        aria-valuemin={0}
-        aria-valuemax={budget.limitCents}
-        aria-label={`${budget.category} budget`}
+        aria-hidden="true"
       >
         <span
           className={cn('h-full', over ? 'bg-destructive' : 'bg-primary')}
@@ -57,6 +56,9 @@ function BudgetRow({ budget, money }: { budget: BudgetProgress; money?: MoneyFor
           style={{ width: `${committedPct}%` }}
         />
       </div>
+      <meter className="sr-only" value={budget.projectedCents} min={0} max={budget.limitCents}>
+        {`${budget.category} budget: ${formatCents(budget.projectedCents, money)} of ${formatCents(budget.limitCents, money)}`}
+      </meter>
 
       <p className="mt-1 text-[11px] text-muted-foreground">
         {formatCents(budget.spentCents, money)} spent

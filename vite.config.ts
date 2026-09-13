@@ -63,6 +63,46 @@ const config = defineConfig({
       '.vercel/**',
       'dist/**',
     ],
+    overrides: [
+      {
+        // shadcn-generated components — not ours to restyle.
+        files: ['src/components/ui/**'],
+        rules: {
+          'tailwindcss/enforce-sort-order': 'off',
+          'tailwindcss/enforce-shorthand': 'off',
+          'tailwindcss/enforce-canonical': 'off',
+          'tailwindcss/consistent-variant-order': 'off',
+          'tailwindcss/no-conflicting-classes': 'off',
+        },
+      },
+    ],
+    jsPlugins: ['oxlint-tailwindcss'],
+    settings: {
+      tailwindcss: {
+        entryPoint: 'src/styles.css',
+      },
+    },
+    rules: {
+      // Correctness
+      'tailwindcss/no-unknown-classes': 'error',
+      'tailwindcss/no-duplicate-classes': 'error',
+      'tailwindcss/no-conflicting-classes': 'error',
+      'tailwindcss/no-deprecated-classes': 'error',
+      'tailwindcss/no-unnecessary-whitespace': 'error',
+      'tailwindcss/no-dark-without-light': 'warn',
+      'tailwindcss/no-contradicting-variants': 'warn',
+      // Style
+      'tailwindcss/enforce-canonical': 'warn',
+      'tailwindcss/enforce-sort-order': 'warn',
+      'tailwindcss/enforce-shorthand': 'warn',
+      'tailwindcss/enforce-consistent-important-position': 'warn',
+      'tailwindcss/enforce-negative-arbitrary-values': 'warn',
+      'tailwindcss/enforce-consistent-variable-syntax': 'warn',
+      'tailwindcss/consistent-variant-order': 'warn',
+      // Restrictions
+      'tailwindcss/no-hardcoded-colors': 'warn',
+      'tailwindcss/no-unnecessary-arbitrary-value': 'warn',
+    },
   },
 
   // Oxfmt

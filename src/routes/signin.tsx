@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { createFileRoute, useRouter } from '@tanstack/react-router'
+import { Link, createFileRoute, useRouter } from '@tanstack/react-router'
 import { createServerFn } from '@tanstack/react-start'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
@@ -64,9 +64,9 @@ function SignIn() {
       <main className="mx-auto flex min-h-[calc(100vh-13rem)] w-full max-w-6xl items-center justify-center px-4">
         <p className="text-sm text-muted-foreground">
           You’re signed in.{' '}
-          <a href="/" className="font-semibold text-primary underline-offset-4 hover:underline">
+          <Link to="/" className="font-semibold text-primary underline-offset-4 hover:underline">
             Go to your board
-          </a>
+          </Link>
         </p>
       </main>
     )

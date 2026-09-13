@@ -530,7 +530,7 @@ function BudgetSettings({
                 <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
                   {budget.category}
                 </span>
-                <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                   {formatCents(budget.projectedCents, money)} of{' '}
                   {formatCents(budget.limitCents, money)}
                 </span>

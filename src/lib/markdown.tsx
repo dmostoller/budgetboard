@@ -7,7 +7,7 @@ const highlighter = createTanStackMarkdownHighlighter(defaultHighlighter)
 
 export function MarkdownContent({ children, className }: { children: string; className?: string }) {
   return (
-    <div className={cn('prose prose-sm dark:prose-invert max-w-none', className)}>
+    <div className={cn('prose prose-sm max-w-none dark:prose-invert', className)}>
       <Markdown highlighter={highlighter}>{children}</Markdown>
     </div>
   )

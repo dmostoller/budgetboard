@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { useForm } from '@tanstack/react-form'
+import type { ReactFormExtendedApi } from '@tanstack/react-form'
 import { z } from 'zod'
 import RecurrenceFields from './RecurrenceFields'
 import { Button } from '@/components/ui/button'
@@ -69,6 +70,25 @@ export interface CardDraft {
   status: CardStatus
 }
 
+// The generic slots on `useForm`'s return type are all inferred at the call
+// site and carry no information the field groups below need — spelling them
+// out per-component would just be noise, so they're opaque here.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type CardForm = ReactFormExtendedApi<
+  CardFormValues,
+  any,
+  any,
+  any,
+  any,
+  any,
+  any,
+  any,
+  any,
+  any,
+  any,
+  any
+>
+
 export default function CardDialog({
   draft,
   categories,
@@ -125,218 +145,15 @@ export default function CardDialog({
           }}
           className="flex flex-col gap-3"
         >
-          <form.Field name="type">
-            {(field) => (
-              <div className="grid grid-cols-2 gap-2">
-                {(['expense', 'income'] as Array<CardType>).map((type) => (
-                  <Button
-                    key={type}
-                    type="button"
-                    variant={field.state.value === type ? 'default' : 'outline'}
-                    className="capitalize"
-                    onClick={() => {
-                      field.handleChange(type)
-                      const lane = LANES.find((l) => l.type === type)!
-                      form.setFieldValue('status', lane.columns[0].status)
-                      if (!categories[type].includes(form.getFieldValue('category'))) {
-                        form.setFieldValue('category', categories[type][0])
-                      }
-                    }}
-                  >
-                    {type}
-                  </Button>
-                ))}
-              </div>
-            )}
-          </form.Field>
+          <CardIdentityFields form={form} categories={categories} />
 
-          <form.Field name="description">
-            {(field) => (
-              <Label className="flex flex-col items-start gap-1">
-                Description
-                <Input
-                  value={field.state.value}
-                  onChange={(e) => field.handleChange(e.target.value)}
-                  onBlur={field.handleBlur}
-                  placeholder="Rent, Netflix, Paycheck…"
-                />
-                <FieldMessage errors={field.state.meta.errors} />
-              </Label>
-            )}
-          </form.Field>
+          <CardClassificationFields
+            form={form}
+            categories={categories}
+            onRequestNewCategory={setNewCategoryFor}
+          />
 
-          <div className="grid grid-cols-2 gap-3">
-            <form.Field name="amount">
-              {(field) => (
-                <Label className="flex flex-col items-start gap-1">
-                  Amount
-                  <Input
-                    inputMode="decimal"
-                    placeholder="0.00"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                  />
-                  <FieldMessage errors={field.state.meta.errors} />
-                </Label>
-              )}
-            </form.Field>
-
-            <form.Field name="date">
-              {(field) => (
-                <Label className="flex flex-col items-start gap-1">
-                  Date
-                  <Input
-                    type="date"
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    onBlur={field.handleBlur}
-                  />
-                  <FieldMessage errors={field.state.meta.errors} />
-                </Label>
-              )}
-            </form.Field>
-          </div>
-
-          <form.Subscribe selector={(state) => state.values.type}>
-            {(type) => (
-              <div className="grid grid-cols-2 gap-3">
-                <form.Field name="category">
-                  {(field) => (
-                    <Label className="flex flex-col items-start gap-1">
-                      Category
-                      <Select
-                        value={field.state.value}
-                        onValueChange={(value) => {
-                          if (value === null) return
-                          if (value === '__new__') {
-                            setNewCategoryFor(type)
-                            return
-                          }
-                          field.handleChange(value)
-                        }}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {categories[type].map((name) => (
-                            <SelectItem key={name} value={name}>
-                              {name}
-                            </SelectItem>
-                          ))}
-                          <SelectItem value="__new__">+ New category…</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FieldMessage errors={field.state.meta.errors} />
-                    </Label>
-                  )}
-                </form.Field>
-
-                <form.Field name="status">
-                  {(field) => (
-                    <Label className="flex flex-col items-start gap-1">
-                      Column
-                      <Select
-                        value={field.state.value}
-                        onValueChange={(value) => value && field.handleChange(value as CardStatus)}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {LANES.find((l) => l.type === type)!.columns.map((c) => (
-                            <SelectItem key={c.status} value={c.status}>
-                              {c.title}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </Label>
-                  )}
-                </form.Field>
-              </div>
-            )}
-          </form.Subscribe>
-
-          <div className="grid grid-cols-2 gap-3">
-            <form.Field name="source">
-              {(field) => (
-                <Label className="flex flex-col items-start gap-1">
-                  Source <span className="font-normal text-muted-foreground">(optional)</span>
-                  <Input
-                    value={field.state.value}
-                    onChange={(e) => field.handleChange(e.target.value)}
-                    placeholder="Payee or payer"
-                  />
-                </Label>
-              )}
-            </form.Field>
-
-            <form.Field name="priority">
-              {(field) => (
-                <Label className="flex flex-col items-start gap-1">
-                  Priority
-                  <Select
-                    value={field.state.value}
-                    onValueChange={(value) => value && field.handleChange(value as CardPriority)}
-                  >
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="low">Low</SelectItem>
-                      <SelectItem value="medium">Medium</SelectItem>
-                      <SelectItem value="high">High</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </Label>
-              )}
-            </form.Field>
-          </div>
-
-          <form.Field name="recurring">
-            {(field) => (
-              <div className="flex flex-col gap-3 rounded-xl border border-border p-3">
-                <Label>
-                  <Checkbox
-                    checked={field.state.value}
-                    onCheckedChange={(checked) => {
-                      const isRecurring = checked === true
-                      field.handleChange(isRecurring)
-                      if (isRecurring && !form.getFieldValue('recurrence')) {
-                        const seedDate = new Date(fromDateInput(form.getFieldValue('date')))
-                        form.setFieldValue('recurrence', {
-                          frequency: 'monthly',
-                          interval: 1,
-                          dayOfMonth: seedDate.getDate(),
-                        })
-                      }
-                    }}
-                  />
-                  Recurring
-                </Label>
-
-                {field.state.value ? (
-                  <form.Field name="recurrence">
-                    {(recurrenceField) => (
-                      <RecurrenceFields
-                        value={
-                          recurrenceField.state.value ?? {
-                            frequency: 'monthly',
-                            interval: 1,
-                            dayOfMonth: 1,
-                          }
-                        }
-                        anchorDate={form.getFieldValue('date')}
-                        onChange={(next) => recurrenceField.handleChange(next)}
-                      />
-                    )}
-                  </form.Field>
-                ) : null}
-              </div>
-            )}
-          </form.Field>
+          <CardRecurringField form={form} />
 
           <form.Field name="notes">
             {(field) => (
@@ -380,6 +197,249 @@ export default function CardDialog({
         />
       ) : null}
     </Dialog>
+  )
+}
+
+function CardIdentityFields({
+  form,
+  categories,
+}: {
+  form: CardForm
+  categories: { expense: Array<string>; income: Array<string> }
+}) {
+  return (
+    <>
+      <form.Field name="type">
+        {(field) => (
+          <div className="grid grid-cols-2 gap-2">
+            {(['expense', 'income'] as Array<CardType>).map((type) => (
+              <Button
+                key={type}
+                type="button"
+                variant={field.state.value === type ? 'default' : 'outline'}
+                className="capitalize"
+                onClick={() => {
+                  field.handleChange(type)
+                  const lane = LANES.find((l) => l.type === type)!
+                  form.setFieldValue('status', lane.columns[0].status)
+                  if (!categories[type].includes(form.getFieldValue('category'))) {
+                    form.setFieldValue('category', categories[type][0])
+                  }
+                }}
+              >
+                {type}
+              </Button>
+            ))}
+          </div>
+        )}
+      </form.Field>
+
+      <form.Field name="description">
+        {(field) => (
+          <Label className="flex flex-col items-start gap-1">
+            Description
+            <Input
+              value={field.state.value}
+              onChange={(e) => field.handleChange(e.target.value)}
+              onBlur={field.handleBlur}
+              placeholder="Rent, Netflix, Paycheck…"
+            />
+            <FieldMessage errors={field.state.meta.errors} />
+          </Label>
+        )}
+      </form.Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <form.Field name="amount">
+          {(field) => (
+            <Label className="flex flex-col items-start gap-1">
+              Amount
+              <Input
+                inputMode="decimal"
+                placeholder="0.00"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+              />
+              <FieldMessage errors={field.state.meta.errors} />
+            </Label>
+          )}
+        </form.Field>
+
+        <form.Field name="date">
+          {(field) => (
+            <Label className="flex flex-col items-start gap-1">
+              Date
+              <Input
+                type="date"
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                onBlur={field.handleBlur}
+              />
+              <FieldMessage errors={field.state.meta.errors} />
+            </Label>
+          )}
+        </form.Field>
+      </div>
+    </>
+  )
+}
+
+function CardClassificationFields({
+  form,
+  categories,
+  onRequestNewCategory,
+}: {
+  form: CardForm
+  categories: { expense: Array<string>; income: Array<string> }
+  onRequestNewCategory: (type: CardType) => void
+}) {
+  return (
+    <>
+      <form.Subscribe selector={(state) => state.values.type}>
+        {(type) => (
+          <div className="grid grid-cols-2 gap-3">
+            <form.Field name="category">
+              {(field) => (
+                <Label className="flex flex-col items-start gap-1">
+                  Category
+                  <Select
+                    value={field.state.value}
+                    onValueChange={(value) => {
+                      if (value === null) return
+                      if (value === '__new__') {
+                        onRequestNewCategory(type)
+                        return
+                      }
+                      field.handleChange(value)
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {categories[type].map((name) => (
+                        <SelectItem key={name} value={name}>
+                          {name}
+                        </SelectItem>
+                      ))}
+                      <SelectItem value="__new__">+ New category…</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FieldMessage errors={field.state.meta.errors} />
+                </Label>
+              )}
+            </form.Field>
+
+            <form.Field name="status">
+              {(field) => (
+                <Label className="flex flex-col items-start gap-1">
+                  Column
+                  <Select
+                    value={field.state.value}
+                    onValueChange={(value) => value && field.handleChange(value as CardStatus)}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(LANES.find((l) => l.type === type) ?? LANES[0]).columns.map((c) => (
+                        <SelectItem key={c.status} value={c.status}>
+                          {c.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </Label>
+              )}
+            </form.Field>
+          </div>
+        )}
+      </form.Subscribe>
+
+      <div className="grid grid-cols-2 gap-3">
+        <form.Field name="source">
+          {(field) => (
+            <Label className="flex flex-col items-start gap-1">
+              Source <span className="font-normal text-muted-foreground">(optional)</span>
+              <Input
+                value={field.state.value}
+                onChange={(e) => field.handleChange(e.target.value)}
+                placeholder="Payee or payer"
+              />
+            </Label>
+          )}
+        </form.Field>
+
+        <form.Field name="priority">
+          {(field) => (
+            <Label className="flex flex-col items-start gap-1">
+              Priority
+              <Select
+                value={field.state.value}
+                onValueChange={(value) => value && field.handleChange(value as CardPriority)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">Low</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                </SelectContent>
+              </Select>
+            </Label>
+          )}
+        </form.Field>
+      </div>
+    </>
+  )
+}
+
+function CardRecurringField({ form }: { form: CardForm }) {
+  return (
+    <form.Field name="recurring">
+      {(field) => (
+        <div className="flex flex-col gap-3 rounded-xl border border-border p-3">
+          <Label>
+            <Checkbox
+              checked={field.state.value}
+              onCheckedChange={(checked) => {
+                const isRecurring = checked === true
+                field.handleChange(isRecurring)
+                if (isRecurring && !form.getFieldValue('recurrence')) {
+                  const seedDate = new Date(fromDateInput(form.getFieldValue('date')))
+                  form.setFieldValue('recurrence', {
+                    frequency: 'monthly',
+                    interval: 1,
+                    dayOfMonth: seedDate.getDate(),
+                  })
+                }
+              }}
+            />
+            Recurring
+          </Label>
+
+          {field.state.value ? (
+            <form.Field name="recurrence">
+              {(recurrenceField) => (
+                <RecurrenceFields
+                  value={
+                    recurrenceField.state.value ?? {
+                      frequency: 'monthly',
+                      interval: 1,
+                      dayOfMonth: 1,
+                    }
+                  }
+                  anchorDate={form.getFieldValue('date')}
+                  onChange={(next) => recurrenceField.handleChange(next)}
+                />
+              )}
+            </form.Field>
+          ) : null}
+        </div>
+      )}
+    </form.Field>
   )
 }
 
