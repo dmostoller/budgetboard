@@ -494,6 +494,66 @@ export const rollAllSeries = internalMutation({
   },
 })
 
+/**
+ * Move every "upcoming" expense whose due date has arrived into the "due"
+ * column. Shared by the per-user mutation (called when a board is opened, for
+ * immediacy) and the cron sweep (for boards nobody has open).
+ */
+async function promoteDue(
+  ctx: MutationCtx,
+  userId: string,
+  cards: Array<Doc<'cards'>>,
+  now: number,
+) {
+  const toPromote = cards.filter(
+    (card) => card.type === 'expense' && card.status === 'upcoming' && card.date <= now,
+  )
+  if (toPromote.length === 0) return 0
+
+  let order = await nextOrder(ctx, userId, 'due')
+  for (const card of toPromote) {
+    await ctx.db.patch(card._id, { status: 'due', order })
+    order += 1000
+  }
+  return toPromote.length
+}
+
+/** Promote the signed-in user's own due cards. Cheap and idempotent, so the
+ * board can call it every time it loads without waiting on the nightly cron. */
+export const promoteMyDueCards = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await requireUserId(ctx)
+    const promoted = await promoteDue(ctx, userId, await liveCards(ctx, userId), Date.now())
+    return { promoted }
+  },
+})
+
+/**
+ * Cross-user sweep so a card still moves from Upcoming to Due even if nobody
+ * has the board open when its due date arrives.
+ */
+export const promoteAllDueCards = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const now = Date.now()
+    const cards = (await ctx.db.query('cards').collect()).filter((c) => c.archivedAt === undefined)
+
+    const byUser = new Map<string, Array<Doc<'cards'>>>()
+    for (const card of cards) {
+      const list = byUser.get(card.userId)
+      if (list) list.push(card)
+      else byUser.set(card.userId, [card])
+    }
+
+    let promoted = 0
+    for (const [userId, userCards] of byUser) {
+      promoted += await promoteDue(ctx, userId, userCards, now)
+    }
+    return { promoted }
+  },
+})
+
 /** Move completed cards older than `before` into history. */
 export const archiveCompleted = mutation({
   args: { before: v.optional(v.number()) },

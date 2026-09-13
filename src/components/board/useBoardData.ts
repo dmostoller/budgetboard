@@ -25,6 +25,7 @@ export function useBoardData(
   dismissedAlerts: Array<string> | undefined,
   money: MoneyFormat,
   pruneAlerts: (args: { liveAlertIds: Array<string> }) => Promise<unknown>,
+  promoteMyDueCards: () => Promise<unknown>,
 ) {
   const withinHorizon = useMemo(() => {
     if (!cards) return []
@@ -73,6 +74,16 @@ export function useBoardData(
     // idempotent either way.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cards, dismissedAlerts])
+
+  // Catches a bill whose due date arrived while nobody had the board open;
+  // the cron sweep would get to it eventually, but this makes it immediate.
+  useEffect(() => {
+    if (!cards?.some((c) => c.type === 'expense' && c.status === 'upcoming' && c.date <= now)) {
+      return
+    }
+    void promoteMyDueCards()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cards, now])
 
   const forecasts = forecastByStatus(withinHorizon, horizonDays)
   const boardIsEmpty = cards !== undefined && cards.length === 0

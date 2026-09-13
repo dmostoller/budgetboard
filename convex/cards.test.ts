@@ -455,6 +455,69 @@ describe('archiving', () => {
   })
 })
 
+describe('due promotion', () => {
+  test('promoteMyDueCards moves an upcoming expense into Due once its date arrives', async () => {
+    const t = setup()
+    const due = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ description: 'Rent', date: Date.now() - DAY }),
+    )
+    const notYet = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ description: 'Later', date: Date.now() + 30 * DAY }),
+    )
+
+    const { promoted } = await as(t).mutation(api.cards.promoteMyDueCards, {})
+    expect(promoted).toBe(1)
+
+    const cards = await as(t).query(api.cards.list, {})
+    expect(cards.find((c) => c._id === due)?.status).toBe('due')
+    expect(cards.find((c) => c._id === notYet)?.status).toBe('upcoming')
+  })
+
+  test('promoteMyDueCards leaves income cards alone — expected has no "due" column', async () => {
+    const t = setup()
+    const id = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({
+        type: 'income',
+        category: 'Salary',
+        description: 'Payday',
+        date: Date.now() - DAY,
+      }),
+    )
+
+    await as(t).mutation(api.cards.promoteMyDueCards, {})
+
+    const card = await as(t).query(api.cards.get, { id })
+    expect(card?.status).toBe('expected')
+  })
+
+  test('is idempotent — running it twice does not re-promote or duplicate', async () => {
+    const t = setup()
+    await as(t).mutation(api.cards.create, expenseArgs({ date: Date.now() - DAY }))
+
+    expect((await as(t).mutation(api.cards.promoteMyDueCards, {})).promoted).toBe(1)
+    expect((await as(t).mutation(api.cards.promoteMyDueCards, {})).promoted).toBe(0)
+    expect(await as(t).query(api.cards.list, {})).toHaveLength(1)
+  })
+
+  test('promoteAllDueCards sweeps every user, for boards nobody has open', async () => {
+    const t = setup()
+    const mine = await as(t).mutation(api.cards.create, expenseArgs({ date: Date.now() - DAY }))
+    const theirs = await as(t, OTHER).mutation(
+      api.cards.create,
+      expenseArgs({ description: 'Theirs', date: Date.now() - DAY }),
+    )
+
+    const { promoted } = await t.mutation(internal.cards.promoteAllDueCards, {})
+    expect(promoted).toBe(2)
+
+    expect((await as(t).query(api.cards.get, { id: mine }))?.status).toBe('due')
+    expect((await as(t, OTHER).query(api.cards.get, { id: theirs }))?.status).toBe('due')
+  })
+})
+
 describe('cards.stats', () => {
   test('sums open cards in cents across the horizon', async () => {
     const t = setup()

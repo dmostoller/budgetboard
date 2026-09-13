@@ -51,6 +51,7 @@ export default function Board() {
   const unarchiveMany = useMutation(api.cards.unarchiveMany)
   const dismissAlerts = useMutation(api.alerts.dismiss)
   const pruneAlerts = useMutation(api.alerts.prune)
+  const promoteMyDueCards = useMutation(api.cards.promoteMyDueCards)
   const dismissInsight = useMutation(api.insights.dismiss)
   const refreshInsights = useMutation(api.insights.refresh)
 
@@ -93,6 +94,7 @@ export default function Board() {
     dismissedAlerts,
     money,
     pruneAlerts,
+    promoteMyDueCards,
   )
 
   const { sensors, activeCard, onDragStart, onDragEnd, onDragCancel } = useCardDrag(

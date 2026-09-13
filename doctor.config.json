@@ -1,0 +1,6 @@
+{
+  // Generated build output (gitignored) — bundled third-party code, not our source.
+  "ignore": {
+    "files": [".output/**", ".nitro/**", ".tanstack/**", "dist/**"]
+  }
+}

@@ -14,6 +14,13 @@ const crons = cronJobs()
 crons.daily('roll recurring series', { hourUTC: 5, minuteUTC: 0 }, internal.cards.rollAllSeries, {})
 
 /**
+ * Move upcoming expenses into Due once their date arrives. The board also
+ * promotes a user's own cards the moment it loads, so this exists only for
+ * boards nobody has open when the due date rolls around.
+ */
+crons.interval('promote due cards', { hours: 1 }, internal.cards.promoteAllDueCards, {})
+
+/**
  * Weekly briefing from the assistant — one observation about the week ahead,
  * for users who have not turned it off.
  */
