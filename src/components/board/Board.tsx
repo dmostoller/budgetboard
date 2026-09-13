@@ -1,4 +1,4 @@
-import { Suspense, lazy, useState } from 'react'
+import { Suspense, lazy, useMemo, useState } from 'react'
 import { useMutation, useQuery } from 'convex/react'
 import { api } from '../../../convex/_generated/api'
 import AISidebar from './AISidebar'
@@ -55,15 +55,35 @@ export default function Board() {
   const dismissInsight = useMutation(api.insights.dismiss)
   const refreshInsights = useMutation(api.insights.refresh)
 
-  const [draft, setDraft] = useState<CardDraft | null>(null)
+  const [draftState, setDraft] = useState<CardDraft | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
-  const [cardToDelete, setCardToDelete] = useState<Card | null>(null)
-  const [filters, setFilters] = useState<BoardFilters>(EMPTY_FILTERS)
-  const [scenario, setScenario] = useState<Scenario>({ mutedCardIds: [], drafts: [] })
+  const [cardToDeleteId, setCardToDeleteId] = useState<string | null>(null)
+  const [rawFilters, setFilters] = useState<BoardFilters>(EMPTY_FILTERS)
+  const [rawScenario, setScenario] = useState<Scenario>({ mutedCardIds: [], drafts: [] })
   const [scenarioOpen, setScenarioOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
   const [now] = useState(() => Date.now())
+
+  // Client state holds ids; each is resolved against live data during render so
+  // a card or category deleted elsewhere can never linger in the UI.
+  const cardToDelete = cards?.find((c) => c._id === cardToDeleteId) ?? null
+  const draft =
+    draftState?.card && !cards?.some((c) => c._id === draftState.card?._id) ? null : draftState
+  // Memoized because useBoardData's memos key off these identities.
+  const scenario = useMemo<Scenario>(() => {
+    const liveCardIds = new Set(cards?.map((c) => c._id))
+    return {
+      ...rawScenario,
+      mutedCardIds: rawScenario.mutedCardIds.filter((id) => liveCardIds.has(id)),
+    }
+  }, [cards, rawScenario])
+  const allCategories = categories ? [...categories.expense, ...categories.income] : []
+  const filters = useMemo<BoardFilters>(() => {
+    if (!categories || !rawFilters.categories) return rawFilters
+    const known = new Set([...categories.expense, ...categories.income])
+    return { ...rawFilters, categories: rawFilters.categories.filter((c) => known.has(c)) }
+  }, [categories, rawFilters])
 
   const horizonDays = settings?.horizonDays ?? 30
   const showCompleted = settings?.showCompleted ?? true
@@ -154,8 +174,6 @@ export default function Board() {
   const budgetEl = budgets?.budgets.length ? (
     <BudgetPanel budgets={budgets.budgets} money={money} />
   ) : null
-  const allCategories = categories ? [...categories.expense, ...categories.income] : []
-
   return (
     <div className="mx-auto max-w-6xl px-4 pt-6 pb-16 xl:max-w-350 2xl:max-w-none 2xl:px-8">
       <BoardHeader
@@ -236,7 +254,7 @@ export default function Board() {
         forecasts={forecasts}
         onAddCard={(status) => setDraft({ status })}
         onOpenCard={(card) => setDraft({ card, status: card.status })}
-        onDeleteCard={(card) => setCardToDelete(card)}
+        onDeleteCard={(card) => setCardToDeleteId(card._id)}
         onDuplicateCard={onDuplicateCard}
         noMatches={noMatches}
       />
@@ -255,11 +273,11 @@ export default function Board() {
 
       <BoardDialogs
         cardToDelete={cardToDelete}
-        onCancelDelete={() => setCardToDelete(null)}
+        onCancelDelete={() => setCardToDeleteId(null)}
         onConfirmDelete={() => {
           if (!cardToDelete) return
           deleteCard(cardToDelete)
-          setCardToDelete(null)
+          setCardToDeleteId(null)
         }}
         completedCount={completedCount}
         archiveConfirmOpen={archiveConfirmOpen}

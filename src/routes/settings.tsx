@@ -367,7 +367,10 @@ function RemoveCategoryDialog({
   onConfirm: (reassignTo: string) => Promise<void>
 }) {
   const usage = useQuery(api.categories.usage, { name: category.name })
-  const [reassignTo, setReassignTo] = useState(options.includes('Other') ? 'Other' : options[0])
+  const [picked, setReassignTo] = useState<string | null>(null)
+  // `options` is live; a pick removed elsewhere falls back rather than going stale.
+  const fallback = options.includes('Other') ? 'Other' : options[0]
+  const reassignTo = picked && options.includes(picked) ? picked : fallback
   const [saving, setSaving] = useState(false)
 
   return (
@@ -457,8 +460,9 @@ function BudgetSettings({
   const used = new Set((budgets ?? []).map((b) => b.category))
   const available = categories.filter((c) => !used.has(c))
 
-  const [category, setCategory] = useState('')
+  const [pickedCategory, setCategory] = useState('')
   const [limit, setLimit] = useState('')
+  const category = available.includes(pickedCategory) ? pickedCategory : ''
 
   return (
     <Card className="mb-4">

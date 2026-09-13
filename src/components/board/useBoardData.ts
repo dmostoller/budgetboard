@@ -65,11 +65,9 @@ export function useBoardData(
   // cannot grow forever. Runs when the board settles, not on every render.
   useEffect(() => {
     if (!cards || !dismissedAlerts?.length) return
-    const stale = staleDismissals(dismissedAlerts, buildAlerts(cards, Date.now(), money))
-    if (stale.length === 0) return
-    void pruneAlerts({
-      liveAlertIds: buildAlerts(cards, Date.now(), money).map((a) => a.id),
-    })
+    const alerts = buildAlerts(cards, Date.now(), money)
+    if (staleDismissals(dismissedAlerts, alerts).length === 0) return
+    void pruneAlerts({ liveAlertIds: alerts.map((a) => a.id) })
     // `money` is derived from settings and stable enough; the effect is
     // idempotent either way.
     // eslint-disable-next-line react-hooks/exhaustive-deps

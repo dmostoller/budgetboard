@@ -54,7 +54,6 @@ export default function ThemeToggle() {
 
   function selectMode(nextMode: ThemeMode) {
     setMode(nextMode)
-    applyThemeMode(nextMode)
     window.localStorage.setItem('theme', nextMode)
   }
 
