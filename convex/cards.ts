@@ -3,8 +3,10 @@ import { internalMutation, mutation, query } from './_generated/server'
 import { cardPriority, cardStatus, cardType, recurrence as recurrenceValidator } from './schema'
 import {
   cardCents,
+  countsTowardBalance,
   getUserId,
   isCompletedStatus,
+  isWishlistStatus,
   projectOccurrences,
   requireUserId,
   statusesForType,
@@ -125,7 +127,9 @@ export const create = mutation({
     }
 
     const now = Date.now()
-    const recurring = args.recurring ?? false
+    // The wishlist holds one-off purchases only; a rule there would have
+    // nothing to roll forward into.
+    const recurring = isWishlistStatus(status) ? false : (args.recurring ?? false)
     // Rules are stored explicitly ("monthly on the 14th", never just
     // "monthly") so an occurrence means the same thing wherever it is read.
     const rule =
@@ -212,6 +216,20 @@ export const update = mutation({
       patch.status = type === 'expense' ? 'upcoming' : 'expected'
     }
 
+    // Anything landing on (or staying on) the wishlist is a one-off.
+    const finalStatus = (patch.status as string | undefined) ?? card.status
+    if (isWishlistStatus(finalStatus) && (card.recurring || fields.recurring)) {
+      // Silently dropping a live rule would orphan the rest of its series;
+      // the caller has to turn recurring off on purpose.
+      if (card.recurring && fields.recurring !== false && !isWishlistStatus(card.status)) {
+        throw new Error('Recurring cards cannot go on the wishlist')
+      }
+      patch.recurring = false
+      patch.recurrence = undefined
+      patch.seriesId = undefined
+      patch.seriesIndex = undefined
+    }
+
     if (patch.status && patch.status !== card.status) {
       patch.order = await nextOrder(ctx, userId, patch.status as string)
       patch.completedAt = isCompletedStatus(patch.status as string) ? Date.now() : undefined
@@ -263,6 +281,9 @@ export const move = mutation({
     const userId = await requireUserId(ctx)
     const card = await ownedCard(ctx, userId, id)
     assertValidStatus(card.type, status)
+    if (isWishlistStatus(status) && card.recurring) {
+      throw new Error('Recurring cards cannot go on the wishlist')
+    }
 
     let order: number
     if (afterOrder !== undefined && beforeOrder !== undefined) {
@@ -369,7 +390,11 @@ export const duplicate = mutation({
   handler: async (ctx, { id, days, date }) => {
     const userId = await requireUserId(ctx)
     const card = await ownedCard(ctx, userId, id)
-    const status = card.type === 'expense' ? 'upcoming' : 'expected'
+    const status = isWishlistStatus(card.status)
+      ? 'wishlist'
+      : card.type === 'expense'
+        ? 'upcoming'
+        : 'expected'
 
     const nextDate =
       date ??
@@ -405,7 +430,7 @@ export const duplicate = mutation({
  * duplicates.
  */
 async function rollSeriesForward(ctx: MutationCtx, card: Doc<'cards'>) {
-  if (!card.recurring || !card.recurrence) return null
+  if (!card.recurring || !card.recurrence || isWishlistStatus(card.status)) return null
 
   const index = (card.seriesIndex ?? 0) + 1
   const nextDate = occurrenceDate(card.date, card.recurrence, 1)
@@ -612,7 +637,7 @@ export const stats = query({
 
     const now = Date.now()
     const horizon = now + (horizonDays ?? 30) * DAY
-    const open = cards.filter((c) => !isCompletedStatus(c.status))
+    const open = cards.filter((c) => countsTowardBalance(c.status))
 
     let upcomingExpenses = 0
     let expectedIncome = 0

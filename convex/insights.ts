@@ -7,7 +7,7 @@ import {
   query,
 } from './_generated/server'
 import { internal } from './_generated/api'
-import { cardCents, getUserId, isCompletedStatus, projectOccurrences, requireUserId } from './lib'
+import { cardCents, countsTowardBalance, getUserId, projectOccurrences, requireUserId } from './lib'
 
 const DAY = 24 * 60 * 60 * 1000
 
@@ -178,7 +178,7 @@ export function detectFindings(summary: Summary, now = Date.now()): Array<Findin
   const findings: Array<Finding> = []
   const { currency } = summary
   const horizonEnd = now + summary.horizonDays * DAY
-  const open = summary.cards.filter((c) => !isCompletedStatus(c.status))
+  const open = summary.cards.filter((c) => countsTowardBalance(c.status))
 
   let income = 0
   let expenses = 0

@@ -6,7 +6,14 @@ import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, XAxis } from 'rechar
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart'
 import type { ChartConfig } from '@/components/ui/chart'
-import { DAY, cardCents, formatCents, isCompleted, projectOccurrences } from '#/lib/board'
+import {
+  DAY,
+  cardCents,
+  countsTowardBalance,
+  formatCents,
+  isCompleted,
+  projectOccurrences,
+} from '#/lib/board'
 import type { Card as BoardCard, MoneyFormat } from '#/lib/board'
 
 const chartConfig = {
@@ -46,7 +53,7 @@ export default function CategoryChart({
     totals.set(card.category, (totals.get(card.category) ?? 0) + cardCents(card))
   }
 
-  const open = cards.filter((c) => c.type === 'expense' && !isCompleted(c.status))
+  const open = cards.filter((c) => c.type === 'expense' && countsTowardBalance(c.status))
   for (const { card } of projectOccurrences(open, now, horizonEnd)) {
     totals.set(card.category, (totals.get(card.category) ?? 0) + cardCents(card))
   }

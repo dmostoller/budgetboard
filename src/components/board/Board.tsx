@@ -4,15 +4,17 @@ import { api } from '../../../convex/_generated/api'
 import AISidebar from './AISidebar'
 import BudgetPanel from './BudgetPanel'
 import CardDialog from './CardDialog'
+import PlanPurchaseDialog from './PlanPurchaseDialog'
 import BoardHeader from './BoardHeader'
 import BoardDialogs from './BoardDialogs'
 import BoardMain from './BoardMain'
 import { useCardDrag } from './useCardDrag'
 import { useBoardData } from './useBoardData'
 import { useBoardActions } from './useBoardActions'
-import { EMPTY_FILTERS } from '#/lib/board'
+import { EMPTY_FILTERS, isWishlistStatus } from '#/lib/board'
+import { EMPTY_SCENARIO } from '#/lib/scenario'
 import { withToast } from '#/lib/toast'
-import type { BoardFilters, Card, CardType, MoneyFormat } from '#/lib/board'
+import type { BoardFilters, Card, CardStatus, CardType, MoneyFormat } from '#/lib/board'
 import type { Scenario } from '#/lib/scenario'
 import type { CardDraft } from './CardDialog'
 import type { Id } from '../../../convex/_generated/dataModel'
@@ -59,7 +61,8 @@ export default function Board() {
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [cardToDeleteId, setCardToDeleteId] = useState<string | null>(null)
   const [rawFilters, setFilters] = useState<BoardFilters>(EMPTY_FILTERS)
-  const [rawScenario, setScenario] = useState<Scenario>({ mutedCardIds: [], drafts: [] })
+  const [rawScenario, setScenario] = useState<Scenario>(EMPTY_SCENARIO)
+  const [planning, setPlanning] = useState<{ cardId: string; status: CardStatus } | null>(null)
   const [scenarioOpen, setScenarioOpen] = useState(false)
   const [alertsOpen, setAlertsOpen] = useState(false)
   const [archiveConfirmOpen, setArchiveConfirmOpen] = useState(false)
@@ -73,11 +76,15 @@ export default function Board() {
   // Memoized because useBoardData's memos key off these identities.
   const scenario = useMemo<Scenario>(() => {
     const liveCardIds = new Set(cards?.map((c) => c._id))
+    // A pick stops meaning anything once its card has left the wishlist.
+    const wishlistIds = new Set(cards?.filter((c) => isWishlistStatus(c.status)).map((c) => c._id))
     return {
       ...rawScenario,
       mutedCardIds: rawScenario.mutedCardIds.filter((id) => liveCardIds.has(id)),
+      wishlist: rawScenario.wishlist.filter((pick) => wishlistIds.has(pick.cardId)),
     }
   }, [cards, rawScenario])
+  const planningCard = planning ? (cards?.find((c) => c._id === planning.cardId) ?? null) : null
   const allCategories = categories ? [...categories.expense, ...categories.income] : []
   const filters = useMemo<BoardFilters>(() => {
     if (!categories || !rawFilters.categories) return rawFilters
@@ -97,6 +104,7 @@ export default function Board() {
     visible,
     byStatus,
     scenarioCards,
+    affordableFrom,
     budgetsByCategory,
     forecasts,
     boardIsEmpty,
@@ -113,6 +121,7 @@ export default function Board() {
     budgets,
     dismissedAlerts,
     money,
+    settings?.balanceCents ?? null,
     pruneAlerts,
     promoteMyDueCards,
   )
@@ -120,6 +129,7 @@ export default function Board() {
   const { sensors, activeCard, onDragStart, onDragEnd, onDragCancel } = useCardDrag(
     byStatus,
     moveCard,
+    (card, status) => setPlanning({ cardId: card._id, status }),
   )
 
   const {
@@ -127,6 +137,7 @@ export default function Board() {
     archiving,
     submitCard,
     duplicateCard: onDuplicateCard,
+    planWishlistCard,
     deleteCard,
     confirmArchive,
     refreshInsights: onRefreshInsights,
@@ -252,6 +263,15 @@ export default function Board() {
         onDragCancel={onDragCancel}
         byStatus={byStatus}
         forecasts={forecasts}
+        affordableFrom={affordableFrom}
+        balanceCents={settings?.balanceCents ?? null}
+        balanceUpdatedAt={settings?.balanceUpdatedAt ?? null}
+        onSaveBalance={(balanceCents) =>
+          void withToast(saveSettings({ balanceCents }), {
+            error: 'Could not save your balance',
+          })
+        }
+        onPlanWishlistCard={(card, date) => void planWishlistCard(card, 'upcoming', date)}
         onAddCard={(status) => setDraft({ status })}
         onOpenCard={(card) => setDraft({ card, status: card.status })}
         onDeleteCard={(card) => setCardToDeleteId(card._id)}
@@ -266,6 +286,19 @@ export default function Board() {
           onClose={() => setDraft(null)}
           onSubmit={submitCard}
           onAddCategory={(name: string, type: CardType) => addCategory({ name, type })}
+        />
+      ) : null}
+
+      {planning && planningCard ? (
+        <PlanPurchaseDialog
+          card={planningCard}
+          status={planning.status}
+          money={money}
+          onClose={() => setPlanning(null)}
+          onConfirm={(date) => {
+            void planWishlistCard(planningCard, planning.status, date)
+            setPlanning(null)
+          }}
         />
       ) : null}
 

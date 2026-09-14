@@ -1,6 +1,8 @@
 import { api } from '../../convex/_generated/api'
 import { getConvexServerClient } from './convex-server'
-import { DAY, formatCents, formatDate, fromDateInput, toCents } from './board'
+import { DAY, formatCents, formatDate, fromDateInput, toCents, toDateInput } from './board'
+import { earliestAffordable, headroom } from './scenario'
+import type { Card } from './board'
 import {
   checkBudgetsDef,
   createCardDef,
@@ -13,6 +15,7 @@ import {
   setBudgetDef,
   suggestCategoryDef,
   updateCardDef,
+  whenCanWeAffordDef,
 } from './ai-tool-defs'
 import type { z } from 'zod'
 import type { Id } from '../../convex/_generated/dataModel'
@@ -34,7 +37,7 @@ function parseRecurrence(input: z.infer<typeof recurrenceSchema> | undefined) {
 
 export interface CardFilters {
   type?: 'income' | 'expense'
-  status?: 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
+  status?: 'wishlist' | 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
   category?: string
   recurring?: boolean
   search?: string
@@ -53,7 +56,7 @@ type CardRecord = {
   priority: 'low' | 'medium' | 'high'
   recurring: boolean
   source?: string
-  status: 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
+  status: 'wishlist' | 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
 }
 
 function centsOf(card: CardRecord) {
@@ -220,6 +223,35 @@ export function createBoardTools(convexToken: string | null) {
     return { summary: `Budget for ${category} set to ${formatCents(toCents(limit))} a month` }
   })
 
+  const whenCanWeAfford = whenCanWeAffordDef.server(async ({ cardId, amount, cushion }) => {
+    const [cards, settings] = await Promise.all([
+      convex.query(api.cards.list, {}) as Promise<Array<Card>>,
+      convex.query(api.settings.get, {}),
+    ])
+    const card = cardId ? cards.find((c) => c._id === cardId) : undefined
+    if (cardId && !card) throw new Error(`No card with id "${cardId}"`)
+
+    const priceCents = card ? centsOf(card) : toCents(amount ?? 0)
+    if (priceCents <= 0) throw new Error('Pass a wishlist card id or a positive amount')
+
+    // A non-wishlist card is already counted; checking it against a board
+    // that includes it would charge for it twice.
+    const board = card ? cards.filter((c) => c._id !== card._id) : cards
+    const room = headroom(board, { startingBalanceCents: settings.balanceCents ?? 0 })
+    const date = earliestAffordable(room, priceCents, toCents(cushion ?? 0))
+    const label = card ? `"${card.description}"` : formatCents(priceCents)
+
+    return {
+      date: date === null ? null : toDateInput(date),
+      amount: priceCents / 100,
+      startingBalance: settings.balanceCents === null ? null : settings.balanceCents / 100,
+      summary:
+        date === null
+          ? `${label} does not fit within the next year at current cash flow`
+          : `${label} fits from ${formatDate(date)}`,
+    }
+  })
+
   return [
     createCard,
     updateCard,
@@ -231,6 +263,7 @@ export function createBoardTools(convexToken: string | null) {
     suggestCategory,
     checkBudgets,
     setBudget,
+    whenCanWeAfford,
   ]
 }
 
@@ -241,9 +274,13 @@ Today's date is ${now.toDateString()} (${now.toISOString().slice(0, 10)}). Resol
 relative date the user gives you ("the 15th", "next Friday", "monthly") against
 that date and pass an absolute YYYY-MM-DD to the tools.
 
-The board has two swimlanes:
+The board has three swimlanes:
 - Expenses: columns "upcoming", "due", "paid"
 - Income: columns "expected", "received"
+- Wishlist: column "wishlist", for expenses the user would like to make someday
+  but has not committed to. Wishlist cards are one-offs, their date means
+  "want by", and they count toward no totals, budgets or alerts. Move one to
+  "upcoming" once the user decides to buy it.
 
 Amounts are in dollars everywhere in these tools; the card type decides the
 direction, so always pass a positive number.
@@ -269,7 +306,7 @@ Rules:
   prose first, and do not retry a call the user rejected — acknowledge it and
   move on.
 - Answer money questions with queryBalance, checkBudgets or listCards rather
-  than guessing.
+  than guessing. For "when can we afford X", use whenCanWeAfford.
 - Keep replies short — one or two sentences confirming what changed. The board
   updates itself, so there is no need to restate every field.`
 }

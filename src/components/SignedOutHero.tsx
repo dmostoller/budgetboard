@@ -11,8 +11,8 @@ const FEATURES = [
   },
   {
     icon: <LayoutGrid size={20} />,
-    title: 'Two swimlanes, five columns',
-    body: 'Expenses move upcoming → due → paid. Income moves expected → received.',
+    title: 'Plan it, pay it, wish for it',
+    body: 'Expenses move upcoming → due → paid, income expected → received, and a wishlist shows when you could afford the rest.',
   },
   {
     icon: <Zap size={20} />,

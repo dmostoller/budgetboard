@@ -3,7 +3,7 @@ import { KeyboardSensor, PointerSensor, TouchSensor, useSensor, useSensors } fro
 import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import type { DragEndEvent, DragStartEvent } from '@dnd-kit/core'
 import type { useMutation } from 'convex/react'
-import { LANES } from '#/lib/board'
+import { columnsForType, isWishlistStatus } from '#/lib/board'
 import type { Card, CardStatus } from '#/lib/board'
 import { pushToast, withToast, withUndo } from '#/lib/toast'
 import type { api } from '../../../convex/_generated/api'
@@ -13,7 +13,15 @@ type MoveCard = ReturnType<typeof useMutation<typeof api.cards.move>>
 
 /** Drag-and-drop wiring for the board's columns: sensors, the card riding
  * under the cursor, and the column-crossing rules a drop has to satisfy. */
-export function useCardDrag(byStatus: Map<CardStatus, Array<Card>>, moveCard: MoveCard) {
+export function useCardDrag(
+  byStatus: Map<CardStatus, Array<Card>>,
+  moveCard: MoveCard,
+  /**
+   * Taking a card off the wishlist turns a "want by" date into a real one, so
+   * the board asks for it instead of moving the card directly.
+   */
+  onLeaveWishlist: (card: Card, status: CardStatus) => void,
+) {
   const [activeCard, setActiveCard] = useState<Card | null>(null)
 
   const sensors = useSensors(
@@ -44,10 +52,19 @@ export function useCardDrag(byStatus: Map<CardStatus, Array<Card>>, moveCard: Mo
       ? (overId.slice('column:'.length) as CardStatus)
       : ((over.data.current?.card as Card | undefined)?.status ?? card.status)
 
-    const lane = LANES.find((l) => l.type === card.type)!
-    if (!lane.columns.some((c) => c.status === targetStatus)) {
+    if (!columnsForType(card.type).some((c) => c.status === targetStatus)) {
       // Income cards cannot land in expense columns and vice versa.
       pushToast(`A ${card.type} card can only move between its own columns`, 'error')
+      return
+    }
+
+    if (isWishlistStatus(targetStatus) && !isWishlistStatus(card.status) && card.recurring) {
+      pushToast('Recurring cards cannot go on the wishlist', 'error')
+      return
+    }
+
+    if (isWishlistStatus(card.status) && !isWishlistStatus(targetStatus)) {
+      onLeaveWishlist(card, targetStatus)
       return
     }
 

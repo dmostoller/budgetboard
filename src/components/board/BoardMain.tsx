@@ -55,6 +55,11 @@ type BoardMainProps = {
   onDragCancel: () => void
   byStatus: Map<CardStatus, Array<Card>>
   forecasts: ReturnType<typeof forecastByStatus>
+  affordableFrom: Map<string, number | null>
+  balanceCents: number | null
+  balanceUpdatedAt: number | null
+  onSaveBalance: (balanceCents: number | null) => void
+  onPlanWishlistCard: (card: Card, date: number) => void
   onAddCard: (status: CardStatus) => void
   onOpenCard: (card: Card) => void
   onDeleteCard: (card: Card) => void
@@ -101,6 +106,11 @@ export default function BoardMain({
   onDragCancel,
   byStatus,
   forecasts,
+  affordableFrom,
+  balanceCents,
+  balanceUpdatedAt,
+  onSaveBalance,
+  onPlanWishlistCard,
   onAddCard,
   onOpenCard,
   onDeleteCard,
@@ -145,6 +155,11 @@ export default function BoardMain({
         <div className="mb-4">
           <ScenarioPanel
             cards={withinHorizon}
+            allCards={cards}
+            balanceCents={balanceCents}
+            balanceUpdatedAt={balanceUpdatedAt}
+            onSaveBalance={onSaveBalance}
+            onPlanWishlistCard={onPlanWishlistCard}
             scenario={scenario}
             horizonDays={horizonDays}
             categories={categories?.expense ?? []}
@@ -186,6 +201,7 @@ export default function BoardMain({
               onDragCancel={onDragCancel}
               byStatus={byStatus}
               forecasts={forecasts}
+              affordableFrom={affordableFrom}
               money={money}
               onAddCard={onAddCard}
               onOpenCard={onOpenCard}

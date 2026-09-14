@@ -1,9 +1,17 @@
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { CopyPlus, FileText, GripVertical, Repeat, Trash2 } from 'lucide-react'
+import { CopyPlus, FileText, GripVertical, Repeat, Sparkles, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
-import { cardCents, describeRecurrence, formatCents, relativeDue, urgency } from '#/lib/board'
+import {
+  cardCents,
+  describeRecurrence,
+  formatCents,
+  formatDate,
+  isWishlistStatus,
+  relativeDue,
+  urgency,
+} from '#/lib/board'
 import type { Card, DateUrgency, MoneyFormat } from '#/lib/board'
 
 const PRIORITY_DOT: Record<Card['priority'], string> = {
@@ -19,7 +27,46 @@ const ACCENT_BY_URGENCY: Record<DateUrgency, string> = {
   done: 'border-border',
 }
 
-function CardBadges({ card, state }: { card: Card; state: DateUrgency }) {
+function CardBadges({
+  card,
+  state,
+  affordableFrom,
+}: {
+  card: Card
+  state: DateUrgency
+  affordableFrom?: number | null
+}) {
+  if (isWishlistStatus(card.status)) {
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
+        <Badge variant="outline">want by {formatDate(card.date)}</Badge>
+        {affordableFrom !== undefined ? (
+          <Badge
+            variant="outline"
+            title="Earliest day it fits without the balance going negative, based on what is on your board"
+            className={
+              affordableFrom === null
+                ? 'text-muted-foreground'
+                : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+            }
+          >
+            <Sparkles size={11} />
+            {affordableFrom === null
+              ? 'not within a year'
+              : affordableFrom <= Date.now()
+                ? 'affordable now'
+                : `affordable ${formatDate(affordableFrom)}`}
+          </Badge>
+        ) : null}
+        <Badge variant="outline">{card.category}</Badge>
+        <span
+          title={`${card.priority} priority`}
+          className={cn('ml-auto size-2 rounded-full', PRIORITY_DOT[card.priority])}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px]">
       <Badge
@@ -105,8 +152,10 @@ export function CardFace({
   onDelete,
   onDuplicate,
   dragHandleProps,
+  affordableFrom,
 }: {
   card: Card
+  affordableFrom?: number | null
   dragging?: boolean
   money?: MoneyFormat
   onOpen?: () => void
@@ -122,6 +171,7 @@ export function CardFace({
       className={cn(
         'group rounded-2xl border bg-card p-3 text-card-foreground transition',
         accent,
+        isWishlistStatus(card.status) && 'border-dashed',
         dragging ? 'rotate-1 shadow-xl' : 'hover:-translate-y-0.5 hover:shadow-md',
         state === 'done' ? 'opacity-70' : '',
       )}
@@ -158,7 +208,7 @@ export function CardFace({
             <p className="mt-0.5 truncate text-xs text-muted-foreground">{card.source}</p>
           ) : null}
 
-          <CardBadges card={card} state={state} />
+          <CardBadges card={card} state={state} affordableFrom={affordableFrom} />
         </button>
 
         <CardActions card={card} onDelete={onDelete} onDuplicate={onDuplicate} />
@@ -173,12 +223,14 @@ export default function BoardCard({
   onOpen,
   onDelete,
   onDuplicate,
+  affordableFrom,
 }: {
   card: Card
   money?: MoneyFormat
   onOpen: () => void
   onDelete: () => void
   onDuplicate: () => void
+  affordableFrom?: number | null
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: card._id,
@@ -200,6 +252,7 @@ export default function BoardCard({
         onOpen={onOpen}
         onDelete={onDelete}
         onDuplicate={onDuplicate}
+        affordableFrom={affordableFrom}
         dragHandleProps={{ ...attributes, ...listeners }}
       />
     </div>

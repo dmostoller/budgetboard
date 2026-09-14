@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { FlaskConical, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { FlaskConical, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -16,14 +16,24 @@ import {
 import { cn } from '@/lib/utils'
 import {
   cardCents,
+  centsToInput,
+  countsTowardBalance,
   formatCents,
   formatDate,
   fromDateInput,
-  isCompleted,
+  isWishlistStatus,
+  relativeDue,
   toCents,
   toDateInput,
 } from '#/lib/board'
-import { compareScenario, isScenarioActive } from '#/lib/scenario'
+import {
+  EMPTY_SCENARIO,
+  applyScenario,
+  compareScenario,
+  earliestAffordable,
+  headroom,
+  isScenarioActive,
+} from '#/lib/scenario'
 import type { Card as BoardCard, CardType, MoneyFormat } from '#/lib/board'
 import type { DraftCard, Scenario } from '#/lib/scenario'
 
@@ -36,6 +46,11 @@ import type { DraftCard, Scenario } from '#/lib/scenario'
  */
 export default function ScenarioPanel({
   cards,
+  allCards,
+  balanceCents,
+  balanceUpdatedAt,
+  onSaveBalance,
+  onPlanWishlistCard,
   scenario,
   horizonDays,
   categories,
@@ -44,6 +59,12 @@ export default function ScenarioPanel({
   onClose,
 }: {
   cards: Array<BoardCard>
+  /** Every live card, horizon or not — affordability looks a year out. */
+  allCards: Array<BoardCard>
+  balanceCents: number | null
+  balanceUpdatedAt: number | null
+  onSaveBalance: (balanceCents: number | null) => void
+  onPlanWishlistCard: (card: BoardCard, date: number) => void
   scenario: Scenario
   horizonDays: number
   categories: Array<string>
@@ -64,7 +85,7 @@ export default function ScenarioPanel({
   const muted = new Set(scenario.mutedCardIds)
 
   const open = cards
-    .filter((c) => !isCompleted(c.status))
+    .filter((c) => countsTowardBalance(c.status))
     .sort((a, b) => cardCents(b) - cardCents(a))
     .slice(0, 30)
 
@@ -102,11 +123,7 @@ export default function ScenarioPanel({
         </CardTitle>
         <div className="flex gap-1">
           {active ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onChange({ mutedCardIds: [], drafts: [] })}
-            >
+            <Button variant="ghost" size="sm" onClick={() => onChange(EMPTY_SCENARIO)}>
               <RotateCcw size={13} />
               Reset
             </Button>
@@ -254,6 +271,17 @@ export default function ScenarioPanel({
           </div>
         ) : null}
 
+        <WishlistSection
+          allCards={allCards}
+          scenario={scenario}
+          balanceCents={balanceCents}
+          balanceUpdatedAt={balanceUpdatedAt}
+          money={money}
+          onChange={onChange}
+          onSaveBalance={onSaveBalance}
+          onPlan={onPlanWishlistCard}
+        />
+
         <div>
           <p className="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             Turn things off
@@ -300,6 +328,193 @@ export default function ScenarioPanel({
         </div>
       </CardContent>
     </Card>
+  )
+}
+
+/**
+ * "When can we afford it?" for each wishlist card.
+ *
+ * Each card is searched on its own, against the scenario as it stands: mutes
+ * and hypotheticals count, and so do the other wishlist cards already picked
+ * — so picking the couch for October is what pushes the laptop back.
+ */
+function WishlistSection({
+  allCards,
+  scenario,
+  balanceCents,
+  balanceUpdatedAt,
+  money,
+  onChange,
+  onSaveBalance,
+  onPlan,
+}: {
+  allCards: Array<BoardCard>
+  scenario: Scenario
+  balanceCents: number | null
+  balanceUpdatedAt: number | null
+  money?: MoneyFormat
+  onChange: (next: Scenario) => void
+  onSaveBalance: (balanceCents: number | null) => void
+  onPlan: (card: BoardCard, date: number) => void
+}) {
+  const [cushion, setCushion] = useState('')
+  const [now] = useState(() => Date.now())
+
+  const wishes = allCards
+    .filter((c) => isWishlistStatus(c.status))
+    .sort((a, b) => a.order - b.order)
+  if (wishes.length === 0) return null
+
+  const cushionCents = toCents(cushion)
+  const picks = new Map(scenario.wishlist.map((pick) => [pick.cardId, pick.date]))
+
+  const rows = wishes.map((card) => {
+    const others = { ...scenario, wishlist: scenario.wishlist.filter((p) => p.cardId !== card._id) }
+    const room = headroom(applyScenario(allCards, others), {
+      startingBalanceCents: balanceCents ?? 0,
+      now,
+    })
+    return { card, earliest: earliestAffordable(room, cardCents(card), cushionCents) }
+  })
+
+  const setPick = (cardId: string, date: number | null) =>
+    onChange({
+      ...scenario,
+      wishlist:
+        date === null
+          ? scenario.wishlist.filter((p) => p.cardId !== cardId)
+          : [...scenario.wishlist.filter((p) => p.cardId !== cardId), { cardId, date }],
+    })
+
+  return (
+    <div>
+      <p className="mb-2 flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+        <Sparkles size={12} className="text-primary" />
+        Wishlist · when can we afford it?
+      </p>
+
+      <div className="mb-3 flex flex-wrap items-end gap-2">
+        <BalanceInput
+          // Remounts when the saved figure changes, so the field never shows
+          // a stale number after a save from somewhere else.
+          key={balanceUpdatedAt ?? 'none'}
+          balanceCents={balanceCents}
+          onSave={onSaveBalance}
+        />
+        <Label className="flex w-32 flex-col items-start gap-1 text-xs">
+          Keep a cushion of
+          <Input
+            value={cushion}
+            onChange={(e) => setCushion(e.target.value)}
+            inputMode="decimal"
+            placeholder="0"
+            className="h-8"
+          />
+        </Label>
+        <p className="pb-2 text-[11px] text-muted-foreground">
+          {balanceUpdatedAt
+            ? `Balance updated ${relativeDue(balanceUpdatedAt, now)}`
+            : 'No balance set — counting from $0'}
+        </p>
+      </div>
+
+      <ul className="flex flex-col gap-1">
+        {rows.map(({ card, earliest }) => {
+          const pick = picks.get(card._id)
+          const included = pick !== undefined
+          const tooEarly = included && (earliest === null || pick < earliest)
+          return (
+            <li
+              key={card._id}
+              className={cn(
+                'flex flex-wrap items-center gap-2 rounded-lg border px-2 py-1.5 text-xs',
+                included ? 'border-primary/40 bg-primary/5' : 'border-dashed border-border',
+              )}
+            >
+              <Checkbox
+                aria-label={`Include ${card.description} in this scenario`}
+                checked={included}
+                onCheckedChange={(checked) =>
+                  setPick(card._id, checked === true ? (earliest ?? card.date) : null)
+                }
+              />
+              <span className="min-w-0 flex-1 truncate">{card.description}</span>
+              <span className="shrink-0 tabular-nums">{formatCents(cardCents(card), money)}</span>
+              <Badge
+                variant="outline"
+                className={
+                  earliest === null
+                    ? 'text-muted-foreground'
+                    : 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400'
+                }
+              >
+                {earliest === null
+                  ? 'not within a year'
+                  : earliest <= now
+                    ? 'affordable now'
+                    : `from ${formatDate(earliest)}`}
+              </Badge>
+              {included ? (
+                <Input
+                  type="date"
+                  aria-label={`Purchase date for ${card.description}`}
+                  value={toDateInput(pick)}
+                  onChange={(e) =>
+                    e.target.value && setPick(card._id, fromDateInput(e.target.value))
+                  }
+                  className={cn('h-7 w-36', tooEarly && 'border-destructive text-destructive')}
+                />
+              ) : null}
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() => onPlan(card, pick ?? earliest ?? card.date)}
+              >
+                Plan it
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+
+      <p className="mt-2 text-[11px] text-muted-foreground">
+        Earliest day each purchase fits without your balance dropping below the cushion, looking up
+        to a year ahead. Based on what’s on your board — expenses you haven’t added yet aren’t
+        counted, so dates further out are more optimistic.
+      </p>
+    </div>
+  )
+}
+
+function BalanceInput({
+  balanceCents,
+  onSave,
+}: {
+  balanceCents: number | null
+  onSave: (balanceCents: number | null) => void
+}) {
+  const [value, setValue] = useState(() =>
+    balanceCents === null ? '' : centsToInput(balanceCents),
+  )
+
+  const save = () => {
+    const next = value.trim() === '' ? null : toCents(value)
+    if (next !== balanceCents) onSave(next)
+  }
+
+  return (
+    <Label className="flex w-36 flex-col items-start gap-1 text-xs">
+      Current balance
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => e.key === 'Enter' && e.currentTarget.blur()}
+        inputMode="decimal"
+        placeholder="In the bank today"
+        className="h-8"
+      />
+    </Label>
   )
 }
 

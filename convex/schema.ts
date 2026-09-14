@@ -5,6 +5,12 @@ export const cardType = v.union(v.literal('income'), v.literal('expense'))
 
 export const cardStatus = v.union(
   // expense lane
+  /**
+   * Things we would like to buy but have not committed to. An expense card
+   * here counts toward nothing — no totals, forecasts, budgets or alerts —
+   * until it is moved into a real column. Always a one-off.
+   */
+  v.literal('wishlist'),
   v.literal('upcoming'),
   v.literal('due'),
   v.literal('paid'),
@@ -112,6 +118,13 @@ export default defineSchema({
     locale: v.optional(v.string()),
     // opt out of the weekly assistant briefing
     insightsEnabled: v.optional(v.boolean()),
+    /**
+     * What the account holds right now, in cents, as the user last told us.
+     * Only the wishlist affordability search reads it; the cash-flow chart
+     * keeps its deliberate zero baseline.
+     */
+    balanceCents: v.optional(v.number()),
+    balanceUpdatedAt: v.optional(v.number()),
   }).index('by_user', ['userId']),
 
   /**

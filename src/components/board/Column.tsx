@@ -6,7 +6,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { cardCents, formatCents } from '#/lib/board'
+import { cardCents, formatCents, isWishlistStatus } from '#/lib/board'
 import type { Card, CardStatus, ColumnForecast, MoneyFormat } from '#/lib/board'
 
 /**
@@ -33,6 +33,7 @@ export default function Column({
   onDelete,
   onDuplicate,
   forecast,
+  affordableFrom,
 }: {
   status: CardStatus
   title: string
@@ -44,7 +45,10 @@ export default function Column({
   onDuplicate: (card: Card) => void
   /** Occurrences this column's series imply but have not materialized yet. */
   forecast?: ColumnForecast
+  /** Earliest affordable date per wishlist card; ignored by other columns. */
+  affordableFrom?: Map<string, number | null>
 }) {
+  const wishlist = isWishlistStatus(status)
   const { setNodeRef, isOver } = useDroppable({
     id: `column:${status}`,
     data: { status },
@@ -58,6 +62,7 @@ export default function Column({
       className={cn(
         'flex min-h-[12rem] w-full flex-col rounded-2xl border p-3 transition',
         isOver ? 'border-primary bg-primary/5' : 'border-border bg-muted/40',
+        wishlist && !isOver && 'border-dashed bg-transparent',
       )}
     >
       <header className="mb-3 flex items-center justify-between gap-2">
@@ -66,8 +71,12 @@ export default function Column({
           <Badge variant="secondary">{cards.length}</Badge>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs font-semibold text-muted-foreground tabular-nums">
+          <span
+            className="text-xs font-semibold text-muted-foreground tabular-nums"
+            title={wishlist ? 'Not counted in any total' : undefined}
+          >
             {formatCents(total, money)}
+            {wishlist ? <span className="font-normal"> · not counted</span> : null}
           </span>
           <Button
             variant="ghost"
@@ -91,11 +100,12 @@ export default function Column({
                 onOpen={() => onOpen(card)}
                 onDelete={() => onDelete(card)}
                 onDuplicate={() => onDuplicate(card)}
+                affordableFrom={wishlist ? affordableFrom?.get(card._id) : undefined}
               />
             ))}
             {cards.length === 0 ? (
               <p className="rounded-xl border border-dashed border-border px-3 py-6 text-center text-xs text-muted-foreground">
-                Drop cards here
+                {wishlist ? 'Things you’d like to buy someday' : 'Drop cards here'}
               </p>
             ) : null}
           </div>

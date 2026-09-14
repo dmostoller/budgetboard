@@ -22,15 +22,27 @@ export {
 } from '../../convex/recurrence'
 export type { NthWeekday, Recurrence, RecurrenceFrequency } from '../../convex/recurrence'
 
-export { cardCents, forecastFrom, projectOccurrences } from '../../convex/lib'
+export {
+  cardCents,
+  countsTowardBalance,
+  forecastFrom,
+  isWishlistStatus,
+  projectOccurrences,
+} from '../../convex/lib'
 
-import { cardCents, forecastFrom, projectOccurrences } from '../../convex/lib'
+import {
+  cardCents,
+  countsTowardBalance,
+  forecastFrom,
+  isWishlistStatus,
+  projectOccurrences,
+} from '../../convex/lib'
 import type { Recurrence } from '../../convex/recurrence'
 
 export const DAY = 24 * 60 * 60 * 1000
 
 export type CardType = 'income' | 'expense'
-export type CardStatus = 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
+export type CardStatus = 'wishlist' | 'upcoming' | 'due' | 'paid' | 'expected' | 'received'
 export type CardPriority = 'low' | 'medium' | 'high'
 
 export interface Card {
@@ -60,13 +72,20 @@ export interface Card {
 }
 
 export interface Lane {
+  key: 'expense' | 'income' | 'wishlist'
   type: CardType
   title: string
   columns: Array<{ status: CardStatus; title: string }>
 }
 
+/**
+ * Lanes in board order. The wishlist is an expense status but gets a lane of
+ * its own: it is not part of the upcoming → due → paid flow, and on wide
+ * screens it shares a row with income (see `BoardLanes`).
+ */
 export const LANES: Array<Lane> = [
   {
+    key: 'expense',
     type: 'expense',
     title: 'Expenses',
     columns: [
@@ -76,6 +95,7 @@ export const LANES: Array<Lane> = [
     ],
   },
   {
+    key: 'income',
     type: 'income',
     title: 'Income',
     columns: [
@@ -83,7 +103,26 @@ export const LANES: Array<Lane> = [
       { status: 'received', title: 'Received' },
     ],
   },
+  {
+    key: 'wishlist',
+    type: 'expense',
+    title: 'Wishlist',
+    columns: [{ status: 'wishlist', title: 'Wishlist' }],
+  },
 ]
+
+/** Every column a card of this type may sit in, across lanes. */
+export function columnsForType(type: CardType) {
+  return LANES.filter((lane) => lane.type === type).flatMap((lane) => lane.columns)
+}
+
+/** The column a new card of this type lands in unless told otherwise. */
+export function defaultStatusFor(type: CardType): CardStatus {
+  return type === 'expense' ? 'upcoming' : 'expected'
+}
+
+/** How far out a new wishlist card's "want by" date starts. */
+export const WISHLIST_DEFAULT_DAYS = 90
 
 export const COMPLETED_STATUSES: Array<CardStatus> = ['paid', 'received']
 
@@ -179,6 +218,8 @@ export type DateUrgency = 'overdue' | 'due-soon' | 'later' | 'done'
 
 export function urgency(card: Card, now = Date.now()): DateUrgency {
   if (isCompleted(card.status)) return 'done'
+  // A wishlist date is a hope, not a deadline; it is never overdue.
+  if (isWishlistStatus(card.status)) return 'later'
   if (card.date < now) return 'overdue'
   if (card.date <= now + 7 * DAY) return 'due-soon'
   return 'later'
@@ -281,7 +322,7 @@ function dailyTotals(cards: Array<Card>, from: number, to: number) {
     add(card.type === 'income' ? income : expense, toDateInput(card.date), cardCents(card))
   }
 
-  const open = cards.filter((c) => !isCompleted(c.status))
+  const open = cards.filter((c) => countsTowardBalance(c.status))
   for (const { card, date } of projectOccurrences(open, from, to)) {
     if (date < from || date > to) continue
     add(card.type === 'income' ? income : expense, toDateInput(date), cardCents(card))
@@ -396,7 +437,7 @@ export function forecastByStatus(
   const from = horizonStart(now)
   const to = from + horizonDays * DAY
 
-  const open = cards.filter((c) => !isCompleted(c.status))
+  const open = cards.filter((c) => countsTowardBalance(c.status))
 
   const seriesTail = new Map<string, Card>()
   for (const card of open) {

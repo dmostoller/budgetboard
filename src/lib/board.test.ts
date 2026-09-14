@@ -3,6 +3,8 @@ import {
   DAY,
   cashFlowSeries,
   centsToInput,
+  columnsForType,
+  defaultStatusFor,
   describeRecurrence,
   filterBoardCards,
   forecastByStatus,
@@ -179,6 +181,7 @@ describe('occurrencesInRange', () => {
 
 describe('lane vocabulary', () => {
   test('maps every status back to its lane', () => {
+    expect(typeForStatus('wishlist')).toBe('expense')
     expect(typeForStatus('upcoming')).toBe('expense')
     expect(typeForStatus('due')).toBe('expense')
     expect(typeForStatus('paid')).toBe('expense')
@@ -189,6 +192,25 @@ describe('lane vocabulary', () => {
   test('labels statuses the way the columns are titled', () => {
     expect(statusLabel('upcoming')).toBe('Upcoming')
     expect(statusLabel('received')).toBe('Received')
+    expect(statusLabel('wishlist')).toBe('Wishlist')
+  })
+
+  test('the wishlist is an expense column, but not the default one', () => {
+    expect(columnsForType('expense').map((c) => c.status)).toEqual([
+      'upcoming',
+      'due',
+      'paid',
+      'wishlist',
+    ])
+    expect(columnsForType('income').map((c) => c.status)).toEqual(['expected', 'received'])
+    expect(defaultStatusFor('expense')).toBe('upcoming')
+  })
+
+  test('a wishlist date is never overdue', () => {
+    const wish = { status: 'wishlist', date: Date.now() - 30 * DAY } as Parameters<
+      typeof urgency
+    >[0]
+    expect(urgency(wish)).toBe('later')
   })
 })
 

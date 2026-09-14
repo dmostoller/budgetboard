@@ -1,4 +1,11 @@
-import { cashFlowSeries, cardCents, isCompleted, projectOccurrences } from './board'
+import {
+  DAY,
+  cardCents,
+  cashFlowSeries,
+  countsTowardBalance,
+  isWishlistStatus,
+  projectOccurrences,
+} from './board'
 import type { Card, CardType, Recurrence } from './board'
 
 /**
@@ -22,17 +29,27 @@ export interface DraftCard {
   recurrence?: Recurrence
 }
 
+/** A wishlist card pretended into the board as a purchase on `date`. */
+export interface WishlistPick {
+  cardId: string
+  date: number
+}
+
 export interface Scenario {
   /** Ids of real cards to pretend do not exist. */
   mutedCardIds: Array<string>
   /** Cards to pretend do exist. */
   drafts: Array<DraftCard>
+  /** Wishlist cards to pretend were bought. */
+  wishlist: Array<WishlistPick>
 }
 
-export const EMPTY_SCENARIO: Scenario = { mutedCardIds: [], drafts: [] }
+export const EMPTY_SCENARIO: Scenario = { mutedCardIds: [], drafts: [], wishlist: [] }
 
 export function isScenarioActive(scenario: Scenario) {
-  return scenario.mutedCardIds.length > 0 || scenario.drafts.length > 0
+  return (
+    scenario.mutedCardIds.length > 0 || scenario.drafts.length > 0 || scenario.wishlist.length > 0
+  )
 }
 
 /** A draft rendered as a `Card`, so every downstream chart treats it alike. */
@@ -55,10 +72,24 @@ export function draftToCard(draft: DraftCard): Card {
   }
 }
 
-/** The card list a scenario implies: real cards minus mutes, plus drafts. */
+/**
+ * The card list a scenario implies: real cards minus mutes, plus drafts, with
+ * picked wishlist cards turned into ordinary upcoming expenses on their
+ * chosen date — which is all it takes for every total to start counting them.
+ */
 export function applyScenario(cards: Array<Card>, scenario: Scenario): Array<Card> {
   const muted = new Set(scenario.mutedCardIds)
-  return [...cards.filter((c) => !muted.has(c._id)), ...scenario.drafts.map(draftToCard)]
+  const picks = new Map(scenario.wishlist.map((pick) => [pick.cardId, pick.date]))
+
+  const adjusted = cards
+    .filter((c) => !muted.has(c._id))
+    .map((c) => {
+      const date = picks.get(c._id)
+      if (date === undefined || !isWishlistStatus(c.status)) return c
+      return { ...c, status: 'upcoming' as const, date }
+    })
+
+  return [...adjusted, ...scenario.drafts.map(draftToCard)]
 }
 
 export interface HorizonTotals {
@@ -79,8 +110,8 @@ export function horizonTotals(
   horizonDays: number,
   now = Date.now(),
 ): HorizonTotals {
-  const to = now + horizonDays * 24 * 60 * 60 * 1000
-  const open = cards.filter((c) => !isCompleted(c.status))
+  const to = now + horizonDays * DAY
+  const open = cards.filter((c) => countsTowardBalance(c.status))
 
   let incomeCents = 0
   let expenseCents = 0
@@ -127,4 +158,72 @@ export function compareScenario(
     baselineTrough: trough(cashFlowSeries(cards, horizonDays, now)),
     scenarioTrough: trough(cashFlowSeries(adjusted, horizonDays, now)),
   }
+}
+
+/** How far ahead "when can we afford it" is willing to look. */
+export const AFFORD_SEARCH_DAYS = 365
+
+export interface Headroom {
+  /** Midnight of each day in the window, today first. */
+  dates: Array<number>
+  /**
+   * For each day, the lowest the balance gets from that day to the end of the
+   * window. A purchase on day `i` fits exactly when it does not push this
+   * below the cushion.
+   */
+  floor: Array<number>
+}
+
+/**
+ * The account balance projected day by day, reduced to what a purchase on
+ * each day would have to clear.
+ *
+ * Only open cards count: anything already paid is assumed to be reflected
+ * in `startingBalanceCents`. Open cards dated before today (an unpaid bill, a
+ * late paycheck) have not happened yet either, so they land on day one
+ * rather than falling out of the window.
+ */
+export function headroom(
+  cards: Array<Card>,
+  {
+    startingBalanceCents = 0,
+    days = AFFORD_SEARCH_DAYS,
+    now = Date.now(),
+  }: { startingBalanceCents?: number; days?: number; now?: number } = {},
+): Headroom {
+  const open = cards.filter((c) => countsTowardBalance(c.status))
+  const series = cashFlowSeries(open, days, now)
+  const from = series[0]?.date ?? now
+
+  let carried = startingBalanceCents
+  for (const card of open) {
+    if (card.date >= from) continue
+    carried += card.type === 'income' ? cardCents(card) : -cardCents(card)
+  }
+
+  const floor = Array.from({ length: series.length }, () => 0)
+  let low = Number.POSITIVE_INFINITY
+  for (let i = series.length - 1; i >= 0; i--) {
+    low = Math.min(low, series[i].balance + carried)
+    floor[i] = low
+  }
+
+  return { dates: series.map((point) => point.date), floor }
+}
+
+/**
+ * The first day a one-off purchase can be made without the balance ever
+ * dropping below `cushionCents` afterwards, or `null` if no day in the window
+ * works.
+ *
+ * "Based on what is on the board": expenses nobody has entered yet do not
+ * exist here, so the further out the answer, the rosier it is.
+ */
+export function earliestAffordable(
+  room: Headroom,
+  amountCents: number,
+  cushionCents = 0,
+): number | null {
+  const index = room.floor.findIndex((low) => low - amountCents >= cushionCents)
+  return index === -1 ? null : room.dates[index]
 }

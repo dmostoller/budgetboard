@@ -21,3 +21,6 @@ todos.json
 # Vercel build output
 .vercel
 .env*
+.agents
+.claude
+.github

@@ -1,4 +1,4 @@
-import { DAY, cardCents, formatCents, isCompleted, relativeDue } from './board'
+import { DAY, cardCents, countsTowardBalance, formatCents, relativeDue } from './board'
 import type { Card, MoneyFormat } from './board'
 
 export type AlertKind = 'overdue' | 'due-today' | 'due-soon' | 'income-late'
@@ -47,7 +47,8 @@ export function buildAlerts(
   const alerts: Array<Alert> = []
 
   for (const card of cards) {
-    if (isCompleted(card.status)) continue
+    // Completed cards need nothing, and a wishlist date is not a deadline.
+    if (!countsTowardBalance(card.status)) continue
 
     const amount = formatCents(cardCents(card), money)
     const base = { cardId: card._id, date: card.date }

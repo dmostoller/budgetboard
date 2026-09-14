@@ -83,6 +83,15 @@ describe('budgets.progress', () => {
     })
   })
 
+  test('a wishlist card commits nothing against a budget', async () => {
+    const t = setup()
+    await as(t).mutation(api.budgets.set, { category: 'Groceries', limitCents: 40000 })
+    await as(t).mutation(api.cards.create, groceries({ status: 'wishlist', amountCents: 99999 }))
+
+    const { budgets } = await as(t).query(api.budgets.progress, {})
+    expect(budgets[0]).toMatchObject({ spentCents: 0, committedCents: 0 })
+  })
+
   test('reports a negative remainder once a budget is over', async () => {
     const t = setup()
     await as(t).mutation(api.budgets.set, { category: 'Groceries', limitCents: 10000 })

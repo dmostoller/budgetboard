@@ -2,12 +2,14 @@ import { useEffect, useMemo } from 'react'
 import {
   DAY,
   LANES,
+  cardCents,
   filterBoardCards,
   forecastByStatus,
   hasActiveFilters,
   isCompleted,
+  isWishlistStatus,
 } from '#/lib/board'
-import { applyScenario, isScenarioActive } from '#/lib/scenario'
+import { applyScenario, earliestAffordable, headroom, isScenarioActive } from '#/lib/scenario'
 import { buildAlerts, staleDismissals } from '#/lib/notifications'
 import type { BoardFilters, Card, CardStatus, MoneyFormat } from '#/lib/board'
 import type { Scenario } from '#/lib/scenario'
@@ -24,6 +26,7 @@ export function useBoardData(
   budgets: Budgets,
   dismissedAlerts: Array<string> | undefined,
   money: MoneyFormat,
+  balanceCents: number | null,
   pruneAlerts: (args: { liveAlertIds: Array<string> }) => Promise<unknown>,
   promoteMyDueCards: () => Promise<unknown>,
 ) {
@@ -33,8 +36,9 @@ export function useBoardData(
     return cards.filter((card) => {
       if (!showCompleted && isCompleted(card.status)) return false
       // Completed cards stay visible regardless of horizon so a just-paid bill
-      // does not vanish from under the cursor.
-      return card.date <= horizon || isCompleted(card.status)
+      // does not vanish from under the cursor. Wishlist dates are wishes, not
+      // schedule, so the horizon does not hide them either.
+      return card.date <= horizon || isCompleted(card.status) || isWishlistStatus(card.status)
     })
   }, [cards, horizonDays, showCompleted, now])
 
@@ -54,6 +58,20 @@ export function useBoardData(
     () => (isScenarioActive(scenario) ? applyScenario(withinHorizon, scenario) : undefined),
     [withinHorizon, scenario],
   )
+
+  /**
+   * The earliest date each wishlist card fits on its own, against the real
+   * board. Searched over every live card rather than the horizon, since the
+   * answer is often further out than the board looks.
+   */
+  const affordableFrom = useMemo(() => {
+    const map = new Map<string, number | null>()
+    const wishes = cards?.filter((c) => isWishlistStatus(c.status)) ?? []
+    if (!cards || wishes.length === 0) return map
+    const room = headroom(cards, { startingBalanceCents: balanceCents ?? 0, now })
+    for (const card of wishes) map.set(card._id, earliestAffordable(room, cardCents(card)))
+    return map
+  }, [cards, balanceCents, now])
 
   const budgetsByCategory = useMemo(() => {
     const map: Record<string, number> = {}
@@ -94,6 +112,7 @@ export function useBoardData(
     visible,
     byStatus,
     scenarioCards,
+    affordableFrom,
     budgetsByCategory,
     forecasts,
     boardIsEmpty,

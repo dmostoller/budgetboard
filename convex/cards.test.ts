@@ -617,6 +617,127 @@ describe('cards.stats', () => {
   })
 })
 
+describe('wishlist', () => {
+  test('a wishlist card counts toward no totals, even past its date', async () => {
+    const t = setup()
+    await as(t).mutation(api.cards.create, expenseArgs({ amountCents: 50000 }))
+    await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ status: 'wishlist', amountCents: 500000, date: Date.now() - 10 * DAY }),
+    )
+    await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ status: 'wishlist', amountCents: 70000, date: Date.now() + 2 * DAY }),
+    )
+
+    const stats = await as(t).query(api.cards.stats, { horizonDays: 30 })
+    expect(stats).toMatchObject({
+      upcomingExpenses: 50000,
+      net: -50000,
+      overdueCount: 0,
+      dueSoonCount: 1,
+      dueSoonAmount: 50000,
+      totalCards: 3,
+    })
+  })
+
+  test('is expense-only and always a one-off', async () => {
+    const t = setup()
+    await expect(
+      as(t).mutation(
+        api.cards.create,
+        expenseArgs({ type: 'income', category: 'Salary', status: 'wishlist' }),
+      ),
+    ).rejects.toThrow(/not valid/)
+
+    const id = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({
+        status: 'wishlist',
+        recurring: true,
+        recurrence: { frequency: 'monthly', interval: 1 },
+      }),
+    )
+    const card = await as(t).query(api.cards.get, { id })
+    expect(card?.recurring).toBe(false)
+    expect(card?.recurrence).toBeUndefined()
+    expect(card?.seriesId).toBeUndefined()
+  })
+
+  test('is never promoted to Due, however far past its date', async () => {
+    const t = setup()
+    const id = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ status: 'wishlist', date: Date.now() - 3 * DAY }),
+    )
+    await as(t).mutation(api.cards.promoteMyDueCards, {})
+    expect((await as(t).query(api.cards.get, { id }))?.status).toBe('wishlist')
+  })
+
+  test('a recurring card cannot be moved onto the wishlist', async () => {
+    const t = setup()
+    const id = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ recurring: true, recurrence: { frequency: 'monthly', interval: 1 } }),
+    )
+    await expect(as(t).mutation(api.cards.move, { id, status: 'wishlist' })).rejects.toThrow(
+      /Recurring/,
+    )
+    await expect(as(t).mutation(api.cards.update, { id, status: 'wishlist' })).rejects.toThrow(
+      /Recurring/,
+    )
+
+    // Turning recurring off in the same edit is a deliberate choice, and allowed.
+    await as(t).mutation(api.cards.update, { id, status: 'wishlist', recurring: false })
+    const moved = await as(t).query(api.cards.get, { id })
+    expect(moved).toMatchObject({ status: 'wishlist', recurring: false })
+    expect(moved?.seriesId).toBeUndefined()
+  })
+
+  test('planning a wishlist card moves it onto the real board on the chosen date', async () => {
+    const t = setup()
+    const id = await as(t).mutation(
+      api.cards.create,
+      expenseArgs({ status: 'wishlist', amountCents: 80000 }),
+    )
+    const date = Date.now() + 20 * DAY
+    await as(t).mutation(api.cards.update, { id, status: 'upcoming', date })
+
+    expect(await as(t).query(api.cards.get, { id })).toMatchObject({ status: 'upcoming', date })
+    const stats = await as(t).query(api.cards.stats, { horizonDays: 30 })
+    expect(stats.upcomingExpenses).toBe(80000)
+  })
+
+  test('duplicating a wishlist card keeps the copy on the wishlist', async () => {
+    const t = setup()
+    const id = await as(t).mutation(api.cards.create, expenseArgs({ status: 'wishlist' }))
+    const copy = await as(t).mutation(api.cards.duplicate, { id })
+    expect((await as(t).query(api.cards.get, { id: copy }))?.status).toBe('wishlist')
+  })
+})
+
+describe('settings balance', () => {
+  test('saves, stamps and forgets the current balance', async () => {
+    const t = setup()
+    expect(await as(t).query(api.settings.get, {})).toMatchObject({ balanceCents: null })
+
+    await as(t).mutation(api.settings.set, { balanceCents: 250000 })
+    const saved = await as(t).query(api.settings.get, {})
+    expect(saved.balanceCents).toBe(250000)
+    expect(saved.balanceUpdatedAt).toEqual(expect.any(Number))
+
+    // Other settings leave it alone.
+    await as(t).mutation(api.settings.set, { horizonDays: 60 })
+    expect((await as(t).query(api.settings.get, {})).balanceCents).toBe(250000)
+
+    await as(t).mutation(api.settings.set, { balanceCents: null })
+    expect(await as(t).query(api.settings.get, {})).toMatchObject({
+      balanceCents: null,
+      balanceUpdatedAt: null,
+    })
+  })
+})
+
 describe('rollAheadDays', () => {
   test('floors at the minimum so a short horizon still gets next month', () => {
     expect(rollAheadDays(7)).toBe(ROLL_AHEAD_MIN_DAYS)

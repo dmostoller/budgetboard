@@ -8,6 +8,8 @@ export const DEFAULT_SETTINGS = {
   currency: 'USD',
   locale: 'en-US',
   insightsEnabled: true,
+  balanceCents: null as number | null,
+  balanceUpdatedAt: null as number | null,
 }
 
 export const get = query({
@@ -29,6 +31,8 @@ export const get = query({
       currency: row?.currency ?? DEFAULT_SETTINGS.currency,
       locale: row?.locale ?? DEFAULT_SETTINGS.locale,
       insightsEnabled: row?.insightsEnabled ?? DEFAULT_SETTINGS.insightsEnabled,
+      balanceCents: row?.balanceCents ?? null,
+      balanceUpdatedAt: row?.balanceUpdatedAt ?? null,
     }
   },
 })
@@ -40,9 +44,25 @@ export const set = mutation({
     currency: v.optional(v.string()),
     locale: v.optional(v.string()),
     insightsEnabled: v.optional(v.boolean()),
+    /** `null` forgets the balance. */
+    balanceCents: v.optional(v.union(v.number(), v.null())),
   },
   handler: async (ctx, fields) => {
     const userId = await requireUserId(ctx)
+    if (
+      fields.balanceCents !== undefined &&
+      fields.balanceCents !== null &&
+      !Number.isFinite(fields.balanceCents)
+    ) {
+      throw new Error('Balance must be a number')
+    }
+    // Stamped so the UI can say how stale the figure is.
+    const balance =
+      fields.balanceCents === undefined
+        ? {}
+        : fields.balanceCents === null
+          ? { balanceCents: undefined, balanceUpdatedAt: undefined }
+          : { balanceCents: Math.round(fields.balanceCents), balanceUpdatedAt: Date.now() }
     const row = await ctx.db
       .query('settings')
       .withIndex('by_user', (q) => q.eq('userId', userId))
@@ -56,6 +76,7 @@ export const set = mutation({
         currency: fields.currency ?? DEFAULT_SETTINGS.currency,
         locale: fields.locale ?? DEFAULT_SETTINGS.locale,
         insightsEnabled: fields.insightsEnabled ?? DEFAULT_SETTINGS.insightsEnabled,
+        ...balance,
       })
     }
 
@@ -65,6 +86,7 @@ export const set = mutation({
       currency: fields.currency ?? row.currency,
       locale: fields.locale ?? row.locale,
       insightsEnabled: fields.insightsEnabled ?? row.insightsEnabled,
+      ...balance,
     })
     return row._id
   },

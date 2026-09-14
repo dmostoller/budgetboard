@@ -2,7 +2,7 @@ import { isWithinEnd, occurrenceDate } from './recurrence'
 import type { Doc } from './_generated/dataModel'
 import type { Recurrence } from './recurrence'
 
-export const EXPENSE_STATUSES = ['upcoming', 'due', 'paid'] as const
+export const EXPENSE_STATUSES = ['wishlist', 'upcoming', 'due', 'paid'] as const
 export const INCOME_STATUSES = ['expected', 'received'] as const
 
 export const COMPLETED_STATUSES = ['paid', 'received'] as const
@@ -12,6 +12,20 @@ export type CardRecurrence = Recurrence
 
 export function isCompletedStatus(status: string) {
   return (COMPLETED_STATUSES as readonly string[]).includes(status)
+}
+
+export function isWishlistStatus(status: string) {
+  return status === 'wishlist'
+}
+
+/**
+ * Whether a card is money that is actually expected to move: open, and not
+ * merely wished for. Every total, forecast, budget and alert filters on
+ * this rather than on "not completed", which would quietly count the
+ * wishlist.
+ */
+export function countsTowardBalance(status: string) {
+  return !isCompletedStatus(status) && !isWishlistStatus(status)
 }
 
 export function statusesForType(type: 'income' | 'expense') {
@@ -89,6 +103,9 @@ export type ProjectableCard = {
  * contributes its own date, and only the furthest-out row in a series
  * projects beyond itself — otherwise every materialized occurrence would
  * project the same future dates again and the forecast would multiply.
+ *
+ * Wishlist cards are skipped here, the one place nearly every total passes
+ * through, so a wished-for purchase cannot leak into a forecast.
  */
 export function projectOccurrences<T extends ProjectableCard>(
   cards: Array<T>,
@@ -97,6 +114,8 @@ export function projectOccurrences<T extends ProjectableCard>(
 ): Array<{ card: T; date: number }> {
   // The furthest-out materialized card in each series is the only one allowed
   // to forecast; a series of one behaves exactly like a one-off card.
+  cards = cards.filter((card) => !isWishlistStatus(card.status))
+
   const seriesTail = new Map<string, T>()
   for (const card of cards) {
     if (!card.seriesId) continue
@@ -132,7 +151,7 @@ export function projectOccurrences<T extends ProjectableCard>(
  * absolute `seriesIndex` plus the step.
  */
 export function forecastFrom(card: ProjectableCard, from: number, to: number): Array<number> {
-  if (!card.recurring || !card.recurrence) return []
+  if (!card.recurring || !card.recurrence || isWishlistStatus(card.status)) return []
 
   const baseIndex = card.seriesIndex ?? 0
   const dates: Array<number> = []

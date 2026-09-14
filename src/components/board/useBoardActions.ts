@@ -1,14 +1,15 @@
 import { useState } from 'react'
 import { toCardMutationArgs } from './CardDialog'
 import { withToast, withUndo } from '#/lib/toast'
-import type { Card } from '#/lib/board'
+import { statusLabel } from '#/lib/board'
+import type { Card, CardStatus } from '#/lib/board'
 import type { CardDraft, CardFormValues } from './CardDialog'
 import type { Id } from '../../../convex/_generated/dataModel'
 
 type Mutations = {
   createCard: (args: ReturnType<typeof toCardMutationArgs>) => Promise<unknown>
   updateCard: (
-    args: ReturnType<typeof toCardMutationArgs> & { id: Id<'cards'> },
+    args: Partial<ReturnType<typeof toCardMutationArgs>> & { id: Id<'cards'> },
   ) => Promise<unknown>
   removeCard: (args: { id: Id<'cards'> }) => Promise<unknown>
   // Convex's restore validator requires amountCents as non-optional, narrower
@@ -47,6 +48,16 @@ export function useBoardActions(mutations: Mutations, draft: CardDraft | null) {
     })
   }
 
+  /** Take a card off the wishlist into a real column, on a real date. */
+  function planWishlistCard(card: Card, status: CardStatus, date: number) {
+    const id = card._id as Id<'cards'>
+    return withUndo(mutations.updateCard({ id, status, date }), {
+      error: `Could not move "${card.description}"`,
+      message: `Moved "${card.description}" to ${statusLabel(status)}`,
+      undo: () => mutations.updateCard({ id, status: card.status, date: card.date }),
+    })
+  }
+
   function deleteCard(card: Card) {
     void withUndo(mutations.removeCard({ id: card._id as Id<'cards'> }), {
       error: 'Could not delete that card',
@@ -80,6 +91,7 @@ export function useBoardActions(mutations: Mutations, draft: CardDraft | null) {
     archiving,
     submitCard,
     duplicateCard,
+    planWishlistCard,
     deleteCard,
     confirmArchive,
     refreshInsights,

@@ -23,10 +23,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
-  LANES,
+  DAY,
+  WISHLIST_DEFAULT_DAYS,
   cardCents,
   centsToInput,
+  columnsForType,
+  defaultStatusFor,
   fromDateInput,
+  isWishlistStatus,
   toCents,
   toDateInput,
   typeForStatus,
@@ -60,7 +64,7 @@ const schema = z.object({
   recurrence: recurrenceSchema.nullable(),
   source: z.string(),
   notes: z.string(),
-  status: z.enum(['upcoming', 'due', 'paid', 'expected', 'received']),
+  status: z.enum(['wishlist', 'upcoming', 'due', 'paid', 'expected', 'received']),
 })
 
 export type CardFormValues = z.infer<typeof schema>
@@ -107,7 +111,12 @@ export default function CardDialog({
   // `window.prompt` blocks the whole page, cannot be styled, and is silently
   // suppressed in some embedded browsers — a real dialog instead.
   const [newCategoryFor, setNewCategoryFor] = useState<CardType | null>(null)
-  const [defaultDate] = useState(() => card?.date ?? Date.now())
+  const [defaultDate] = useState(
+    () =>
+      card?.date ??
+      // A wish is for later; today would read as "due today" once planned.
+      (isWishlistStatus(draft.status) ? Date.now() + WISHLIST_DEFAULT_DAYS * DAY : Date.now()),
+  )
 
   const form = useForm({
     defaultValues: {
@@ -153,7 +162,12 @@ export default function CardDialog({
             onRequestNewCategory={setNewCategoryFor}
           />
 
-          <CardRecurringField form={form} />
+          <form.Subscribe selector={(state) => state.values.status}>
+            {(status) =>
+              // Wishlist cards are one-offs; see `convex/cards.ts`.
+              isWishlistStatus(status) ? null : <CardRecurringField form={form} />
+            }
+          </form.Subscribe>
 
           <form.Field name="notes">
             {(field) => (
@@ -220,8 +234,7 @@ function CardIdentityFields({
                 className="capitalize"
                 onClick={() => {
                   field.handleChange(type)
-                  const lane = LANES.find((l) => l.type === type)!
-                  form.setFieldValue('status', lane.columns[0].status)
+                  form.setFieldValue('status', defaultStatusFor(type))
                   if (!categories[type].includes(form.getFieldValue('category'))) {
                     form.setFieldValue('category', categories[type][0])
                   }
@@ -269,7 +282,9 @@ function CardIdentityFields({
         <form.Field name="date">
           {(field) => (
             <Label className="flex flex-col items-start gap-1">
-              Date
+              <form.Subscribe selector={(state) => state.values.status}>
+                {(status) => (isWishlistStatus(status) ? 'Want by' : 'Date')}
+              </form.Subscribe>
               <Input
                 type="date"
                 value={field.state.value}
@@ -343,7 +358,7 @@ function CardClassificationFields({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {(LANES.find((l) => l.type === type) ?? LANES[0]).columns.map((c) => (
+                      {columnsForType(type).map((c) => (
                         <SelectItem key={c.status} value={c.status}>
                           {c.title}
                         </SelectItem>
@@ -503,6 +518,7 @@ function FieldMessage({ errors }: { errors: Array<unknown> }) {
 }
 
 export function toCardMutationArgs(values: CardFormValues) {
+  const recurring = values.recurring && !isWishlistStatus(values.status)
   return {
     type: values.type,
     amountCents: toCents(values.amount),
@@ -510,8 +526,8 @@ export function toCardMutationArgs(values: CardFormValues) {
     date: fromDateInput(values.date),
     category: values.category,
     priority: values.priority,
-    recurring: values.recurring,
-    recurrence: values.recurring ? (values.recurrence ?? undefined) : undefined,
+    recurring,
+    recurrence: recurring ? (values.recurrence ?? undefined) : undefined,
     source: values.source.trim() || undefined,
     notes: values.notes.trim() || undefined,
     status: values.status,

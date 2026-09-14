@@ -14,7 +14,7 @@ import { z } from 'zod'
 
 export const cardTypeSchema = z.enum(['income', 'expense'])
 export const prioritySchema = z.enum(['low', 'medium', 'high'])
-export const statusSchema = z.enum(['upcoming', 'due', 'paid', 'expected', 'received'])
+export const statusSchema = z.enum(['wishlist', 'upcoming', 'due', 'paid', 'expected', 'received'])
 
 export const dateSchema = z
   .string()
@@ -93,7 +93,9 @@ export const createCardDef = toolDefinition({
     status: statusSchema
       .optional()
       .describe(
-        'Column to place the card in. Defaults to upcoming (expense) or expected (income).',
+        'Column to place the card in. Defaults to upcoming (expense) or expected (income). ' +
+          'Use wishlist for things the user would like to buy someday but has not committed to; ' +
+          'wishlist cards cannot be recurring and the date means "want by".',
       ),
   }),
   outputSchema: mutationResult,
@@ -186,7 +188,7 @@ export const queryBalanceDef = toolDefinition({
   description:
     'Get totals for the board: upcoming expenses, expected income, net ' +
     'balance, overdue and due-soon counts. Recurring cards are projected ' +
-    'across the horizon.',
+    'across the horizon. Wishlist cards are never included.',
   inputSchema: z.object({
     withinDays: z.number().optional().describe('Time horizon in days. Defaults to 30.'),
   }),
@@ -242,6 +244,27 @@ export const setBudgetDef = toolDefinition({
   outputSchema: z.object({ summary: z.string() }),
 })
 
+export const whenCanWeAffordDef = toolDefinition({
+  name: 'whenCanWeAfford',
+  description:
+    'Find the earliest date a one-off purchase fits without the projected ' +
+    'account balance dropping below a cushion, searching up to a year ahead. ' +
+    'Pass a wishlist card id, or an amount for something not on the board. ' +
+    'Uses the balance the user saved; if none is saved it counts from zero, ' +
+    'so say so. Only knows about cards on the board.',
+  inputSchema: z.object({
+    cardId: z.string().optional().describe('A wishlist card to check'),
+    amount: amountSchema.optional().describe('Price in dollars, when there is no card'),
+    cushion: z.number().optional().describe('Dollars to keep in reserve. Defaults to 0.'),
+  }),
+  outputSchema: z.object({
+    date: z.string().nullable().describe('YYYY-MM-DD, or null if not within a year'),
+    amount: z.number(),
+    startingBalance: z.number().nullable(),
+    summary: z.string(),
+  }),
+})
+
 /**
  * Declared to the browser's chat client purely for typing: it never executes
  * these, but knowing them is what makes a paused approval arrive as a typed
@@ -258,4 +281,5 @@ export const BOARD_TOOL_DEFS = [
   suggestCategoryDef,
   checkBudgetsDef,
   setBudgetDef,
+  whenCanWeAffordDef,
 ] as const

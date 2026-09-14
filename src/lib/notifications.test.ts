@@ -33,6 +33,11 @@ describe('buildAlerts', () => {
     expect(buildAlerts([card({ date: now - 5 * DAY, status: 'paid' })], now)).toEqual([])
   })
 
+  test('never nags about a wishlist card, however far past its date', () => {
+    expect(buildAlerts([card({ date: now - 5 * DAY, status: 'wishlist' })], now)).toEqual([])
+    expect(buildAlerts([card({ date: now, status: 'wishlist' })], now)).toEqual([])
+  })
+
   test('raises overdue, due-today and due-soon for expenses', () => {
     const alerts = buildAlerts(
       [
